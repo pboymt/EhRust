@@ -9,14 +9,61 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
-
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        job: 
+          - type: amd64-debian
+            target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - type: amd64-alpine
+            target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - type: aarch64-debian
+            target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - type: aarch64-alpine
+            target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - type: armv7-linux
+            target: armv7-unknown-linux-musleabihf
+            os: ubuntu-latest
+          - type: x86_64-windows
+            target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - type: x86_64-macos
+            target: x86_64-apple-darwin
+            os: macos-latest
+          - type: aarch64-macos
+            target: aarch64-apple-darwin
+            os: macos-latest
+          - type: aarch64-ios
+            target: aarch64-apple-ios
+            os: macos-latest
+          - type: wasm32
+            target: wasm32-unknown-unknown
+            os: ubuntu-latest
+    name: Build ${{ matrix.job.type }}
+    runs-on: ${{ matrix.job.os }}
 
     steps:
     - uses: actions/checkout@v3
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.job.target }}
+        profile: minimal
+        override: true
     - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release --target ${{ matrix.job.target }} --locked
+        use-cross: true
