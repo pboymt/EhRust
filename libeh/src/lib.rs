@@ -1,16 +1,23 @@
-use hyper::{Client, Uri};
-use hyper_tls::HttpsConnector;
+use reqwest::Client;
+use std::error::Error;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
 }
 
-pub async fn web(url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let https = HttpsConnector::new();
-    let client = Client::builder().build::<_, hyper::Body>(https);
-    let uri: Uri = url.parse()?;
-    let res = client.get(uri).await?;
-    Ok(res.status().to_string())
+// e-hentai.org 104.20.134.21
+pub async fn web() -> Result<String, Box<dyn Error + Send + Sync>> {
+    let client = Client::builder()
+        .tls_sni(false)
+        .danger_accept_invalid_certs(true)
+        .build()?;
+    let res = client
+        .get("https://104.20.134.21")
+        .header("Host", "e-hentai.org")
+        .send()
+        .await?;
+    let text = res.text().await?;
+    Ok(text)
 }
 
 #[cfg(test)]
