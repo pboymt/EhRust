@@ -29,4 +29,12 @@ mod tests {
         let result = add(2, 2);
         assert_eq!(result, 4);
     }
+
+    #[test]
+    fn web_request() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(web());
+        assert!(result.is_ok());
+        assert_ne!(result.unwrap().len(), 0);
+    }
 }
