@@ -18,49 +18,61 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: 
+        config: 
           - type: amd64-debian
             target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           - type: amd64-alpine
             target: x86_64-unknown-linux-musl
             os: ubuntu-latest
-          - type: aarch64-debian
-            target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-          - type: aarch64-alpine
-            target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-          - type: armv7-linux
-            target: armv7-unknown-linux-musleabihf
-            os: ubuntu-latest
-          - type: x86_64-windows
-            target: x86_64-pc-windows-msvc
-            os: windows-latest
-          - type: x86_64-macos
-            target: x86_64-apple-darwin
-            os: macos-latest
-          - type: aarch64-macos
-            target: aarch64-apple-darwin
-            os: macos-latest
-          - type: aarch64-ios
-            target: aarch64-apple-ios
-            os: macos-latest
-          - type: wasm32
-            target: wasm32-unknown-unknown
-            os: ubuntu-latest
-    name: Build ${{ matrix.job.type }}
-    runs-on: ${{ matrix.job.os }}
+          # - type: aarch64-debian
+          #   target: aarch64-unknown-linux-gnu
+          #   os: ubuntu-latest
+          # - type: aarch64-alpine
+          #   target: aarch64-unknown-linux-musl
+          #   os: ubuntu-latest
+          # - type: armv7-linux
+          #   target: armv7-unknown-linux-musleabihf
+          #   os: ubuntu-latest
+          # - type: x86_64-windows
+          #   target: x86_64-pc-windows-msvc
+          #   os: windows-latest
+          # - type: x86_64-macos
+          #   target: x86_64-apple-darwin
+          #   os: macos-latest
+          # - type: aarch64-macos
+          #   target: aarch64-apple-darwin
+          #   os: macos-latest
+          # - type: aarch64-ios
+          #   target: aarch64-apple-ios
+          #   os: macos-latest
+    name: Build ${{ matrix.config.type }}
+    runs-on: ${{ matrix.config.os }}
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Install Rust
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Cargo Cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install libopenssl at Linux
+      if: matrix.config.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libssl-dev
+    - name: Install Rust Toolchain
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
-        target: ${{ matrix.job.target }}
-        profile: minimal
-        override: true
+        target: ${{ matrix.config.target }}
+        # profile: minimal
+        # override: true
     - name: Build
       uses: actions-rs/cargo@v1
       with:
