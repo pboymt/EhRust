@@ -34,15 +34,15 @@ jobs:
           # - type: armv7-linux
           #   target: armv7-unknown-linux-musleabihf
           #   os: ubuntu-latest
-          # - type: x86_64-windows
-          #   target: x86_64-pc-windows-msvc
-          #   os: windows-latest
-          # - type: x86_64-macos
-          #   target: x86_64-apple-darwin
-          #   os: macos-latest
-          # - type: aarch64-macos
-          #   target: aarch64-apple-darwin
-          #   os: macos-latest
+          - type: x86_64-windows
+            target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - type: x86_64-macos
+            target: x86_64-apple-darwin
+            os: macos-latest
+          - type: aarch64-macos
+            target: aarch64-apple-darwin
+            os: macos-latest
           # - type: aarch64-ios
           #   target: aarch64-apple-ios
           #   os: macos-latest
@@ -61,11 +61,11 @@ jobs:
           ~/.cargo/registry/cache/
           ~/.cargo/git/db/
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    - name: Install libopenssl at Linux
-      if: matrix.config.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev
+    # - name: Install libopenssl at Linux
+    #   if: matrix.config.os == 'ubuntu-latest'
+    #   run: |
+    #     sudo apt-get update
+    #     sudo apt-get install -y libssl-dev
     - name: Install Rust Toolchain
       uses: actions-rs/toolchain@v1
       with:
