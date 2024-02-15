@@ -15,5 +15,5 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 tokio.workspace = true
-libeh = { path = "../libeh" }
+libeh = { version = "0.1" }
 serde_yaml = { version = "0.9" }
