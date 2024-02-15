@@ -1,7 +1,7 @@
 use reqwest::{cookie::Jar, redirect, Client, Proxy, Url};
 use serde::de::DeserializeOwned;
 
-use crate::dto::{enums::Offset, keyword::Keyword, site::Site};
+use crate::dto::{keyword::Keyword, search_offset::Offset, site::Site};
 use crate::url::search::SearchBuilder;
 
 use super::config::EhClientConfig;
