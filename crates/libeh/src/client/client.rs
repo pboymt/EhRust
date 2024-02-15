@@ -132,8 +132,11 @@ mod tests {
             .await;
         match res {
             Ok(text) => {
-                println!("HTML: {}", text);
-                let file = File::create("samples/search.html").await;
+                // println!("HTML: {}", text);
+                let mut cwd = std::env::current_dir().unwrap();
+                cwd.push("../../samples/search.html");
+                println!("File: {}", cwd.display());
+                let file = File::create(cwd).await;
                 let mut file = match file {
                     Ok(file) => file,
                     Err(err) => panic!("Error: {}", err),

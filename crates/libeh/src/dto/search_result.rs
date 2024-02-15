@@ -288,7 +288,9 @@ mod tests {
 
     #[test]
     fn test_parse_search_result() {
-        let mut file = match File::open("samples/search.html") {
+        let mut cwd = std::env::current_dir().unwrap();
+        cwd.push("../../samples/search.html");
+        let mut file = match File::open(cwd) {
             Ok(file) => file,
             Err(err) => panic!("Failed to open file: {}", err),
         };

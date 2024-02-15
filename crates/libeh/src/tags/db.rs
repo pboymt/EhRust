@@ -64,7 +64,9 @@ pub struct ETTDataExample {
 #[test]
 fn test_eh_tag_translations() {
     use std::fs::File;
-    let file = File::open("db.text.json").unwrap();
+    let mut cwd = std::env::current_dir().unwrap();
+    cwd.push("../../db.text.json");
+    let file = File::open(cwd).unwrap();
     let eh_tag_translations: EhTagTranslations = serde_json::from_reader(file).unwrap();
     println!("eh_tag_translations: {:#?}", eh_tag_translations.data.len());
 }
