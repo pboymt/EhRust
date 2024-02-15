@@ -9,6 +9,7 @@ homepage = "https://github.com/pboymt/EhRust"
 repository = "https://github.com/pboymt/EhRust"
 readme = "README.md"
 keywords = ["e-hentai", "exhentai", "ehrust", "libeh"]
+categories = ["command-line-utilities"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
