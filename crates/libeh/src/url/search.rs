@@ -1,8 +1,7 @@
-use std::vec;
-
+use crate::dto::{category::Category, keyword::Keyword, search_offset::Offset, site::Site};
 use reqwest::Url;
-
-use super::enums::{Category, Keyword, Offset, Site};
+use serde::{Deserialize, Serialize};
+use std::vec;
 
 #[derive(Debug, Clone)]
 pub struct PageRange(Option<i64>, Option<i64>);
@@ -19,9 +18,15 @@ pub struct AdvancedSearch {
     pub disable_filters_for_tags: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchOptions {
+    keywords: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct SearchBuilder {
     _site: Site,
+    _watched: bool,
     _offset: Option<Offset>,
     _category: u16,
     _keywords: Vec<Keyword>,
@@ -44,6 +49,7 @@ impl SearchBuilder {
         // 设置disable_filters_for_tags为false
         Self {
             _site: site,
+            _watched: false,
             _offset: None,
             _category: 0,
             _keywords: vec![],
@@ -61,15 +67,16 @@ impl SearchBuilder {
         }
     }
 
-    /// 获取当前对象的主机名
-    fn host(&self) -> String {
-        // 根据_site的值选择对应的主机名
-        match self._site {
-            // 如果_site为Site::Eh，则主机名为"e-hentai.org"
-            Site::Eh => "e-hentai.org".to_string(),
-            // 如果_site为Site::Ex，则主机名为"exhentai.org"
-            Site::Ex => "exhentai.org".to_string(),
-        }
+    /// 设置只搜索订阅的作品
+    pub fn watched(mut self) -> SearchBuilder {
+        self._watched = true;
+        self
+    }
+
+    /// 设置不只搜索订阅的作品
+    pub fn unwatched(mut self) -> SearchBuilder {
+        self._watched = false;
+        self
     }
 
     /// 设置搜索的偏移量
@@ -78,16 +85,22 @@ impl SearchBuilder {
         self
     }
 
+    /// 清空搜索的偏移量
+    pub fn clear_offset(mut self) -> SearchBuilder {
+        self._offset = None;
+        self
+    }
+
     /// 启用/禁用类别
     pub fn toggle_category(mut self, category: Category) -> SearchBuilder {
         // 判断当前类别是否已禁用
-        let disabled = (self._category & u16::from(category) as u16) == u16::from(category) as u16;
+        let disabled = (self._category & u16::from(category)) == u16::from(category);
         // 如果已禁用，则去除该类别的标志位
         if disabled {
-            self._category = self._category & (1023 ^ u16::from(category) as u16);
+            self._category = self._category & (1023 ^ u16::from(category));
         } else {
             // 如果未禁用，则设置该类别的标志位
-            self._category |= u16::from(category) as u16;
+            self._category |= u16::from(category);
         }
         self
     }
@@ -99,8 +112,14 @@ impl SearchBuilder {
     }
 
     /// 添加关键词
-    pub fn keyword(mut self, keyword: Keyword) -> SearchBuilder {
+    pub fn add_keyword(mut self, keyword: Keyword) -> SearchBuilder {
         self._keywords.push(keyword);
+        self
+    }
+
+    /// 批量添加关键词
+    pub fn add_keywords(mut self, keywords: Vec<Keyword>) -> SearchBuilder {
+        self._keywords.extend(keywords);
         self
     }
 
@@ -160,17 +179,16 @@ impl SearchBuilder {
     }
 
     /// 获取基础URL
-    fn base_url(&self) -> Result<Url, String> {
-        let host = self.host();
-        let url_result = Url::parse(format!("https://{}", host).as_str());
-        match url_result {
-            Ok(url) => Ok(url),
-            Err(err) => Err(format!("解析URL失败: {}", err)),
+    fn build_base_url(&self) -> Result<Url, String> {
+        let mut url = Url::from(self._site);
+        if self._watched {
+            url.set_path("/watched");
         }
+        Ok(url)
     }
 
     /// 向URL中追加分类信息
-    fn append_category(&self, mut url: Url) -> Result<Url, String> {
+    fn build_append_category(&self, mut url: Url) -> Result<Url, String> {
         if self._category != 0 {
             let mut query_pairs = url.query_pairs_mut();
             query_pairs.append_pair("f_cats", &self._category.to_string());
@@ -179,71 +197,23 @@ impl SearchBuilder {
     }
 
     /// 在给定的URL后面追加偏移量
-    fn append_offset(&self, mut url: Url) -> Result<Url, String> {
+    fn build_append_offset(&self, mut url: Url) -> Result<Url, String> {
         // 如果_offset存在
         if let Some(offset) = self._offset.clone() {
-            // 根据_offset的类型进行匹配
-            match offset {
-                // 如果_offset是Next类型
-                Offset::Next(gid, jump) => {
-                    // 获取url的query_pairs_mut方法的返回值
-                    let mut query_pairs = url.query_pairs_mut();
-                    // 向query_pairs中添加键值对，键为"next"，值为gid的字符串形式
-                    query_pairs.append_pair("next", &gid.to_string());
-                    // 如果jump存在
-                    if let Some(jump) = jump {
-                        // 向query_pairs中添加键值对，键为"jump"，值为jump
-                        query_pairs.append_pair("jump", &jump);
-                    }
-                }
-                // 如果_offset是Prev类型
-                Offset::Prev(gid, jump) => {
-                    // 获取url的query_pairs_mut方法的返回值
-                    let mut query_pairs = url.query_pairs_mut();
-                    // 向query_pairs中添加键值对，键为"prev"，值为gid的字符串形式
-                    query_pairs.append_pair("prev", &gid.to_string());
-                    // 如果jump存在
-                    if let Some(jump) = jump {
-                        // 向query_pairs中添加键值对，键为"jump"，值为jump
-                        query_pairs.append_pair("jump", &jump);
-                    }
-                }
-                // 如果_offset是Range类型
-                Offset::Range(range) => {
-                    // 获取url的query_pairs_mut方法的返回值
-                    let mut query_pairs = url.query_pairs_mut();
-                    // 向query_pairs中添加键值对，键为"range"，值为range的字符串形式
-                    query_pairs.append_pair("range", &range.to_string());
-                }
-            }
+            let mut query_pairs = url.query_pairs_mut();
+            query_pairs.extend_pairs(offset);
         }
         Ok(url)
     }
 
     /// 向URL中追加关键词
-    fn append_keywors(&self, mut url: Url) -> Result<Url, String> {
+    fn build_append_keywors(&self, mut url: Url) -> Result<Url, String> {
         // 创建一个空的关键词列表
         let mut keyword_list: Vec<String> = vec![];
         // 遍历关键词列表
         for keyword in &self._keywords {
-            // 根据关键词类型生成对应的关键词字符串
-            let keyword_unit = match keyword {
-                Keyword::Normal(keyword) => format!("\"{}\"", keyword),
-                Keyword::Language(keyword) => format!("l:\"{}$\"", keyword),
-                Keyword::Parody(keyword) => format!("p:\"{}$\"", keyword),
-                Keyword::Character(keyword) => format!("c:\"{}$\"", keyword),
-                Keyword::Artist(keyword) => format!("a:\"{}$\"", keyword),
-                Keyword::Cosplayer(keyword) => format!("cos:\"{}$\"", keyword),
-                Keyword::Group(keyword) => format!("g:\"{}$\"", keyword),
-                Keyword::Female(keyword) => format!("f:\"{}$\"", keyword),
-                Keyword::Male(keyword) => format!("m:\"{}$\"", keyword),
-                Keyword::Mixed(keyword) => format!("x:\"{}$\"", keyword),
-                Keyword::Other(keyword) => format!("o:\"{}$\"", keyword),
-                Keyword::Reclass(keyword) => format!("r:\"{}$\"", keyword),
-                Keyword::Temp(keyword) => format!("temp:\"{}$\"", keyword),
-            };
             // 将关键词字符串添加到关键词列表中
-            keyword_list.push(keyword_unit);
+            keyword_list.push(keyword.to_string());
         }
         // 将关键词列表追加到URL的查询参数中
         {
@@ -254,7 +224,7 @@ impl SearchBuilder {
         Ok(url)
     }
 
-    fn append_advanced_search(&self, mut url: Url) -> Result<Url, String> {
+    fn build_append_advanced_search(&self, mut url: Url) -> Result<Url, String> {
         // 如果高级搜索功能已启用
         if self._advsearch.enabled {
             // 获取可修改的查询参数
@@ -308,11 +278,11 @@ impl SearchBuilder {
     }
 
     pub fn build(self) -> Result<Url, String> {
-        let mut url = self.base_url()?;
-        url = self.append_offset(url)?;
-        url = self.append_category(url)?;
-        url = self.append_keywors(url)?;
-        url = self.append_advanced_search(url)?;
+        let mut url = self.build_base_url()?;
+        url = self.build_append_offset(url)?;
+        url = self.build_append_category(url)?;
+        url = self.build_append_keywors(url)?;
+        url = self.build_append_advanced_search(url)?;
         Ok(url)
     }
 }
@@ -320,5 +290,24 @@ impl SearchBuilder {
 impl Default for SearchBuilder {
     fn default() -> Self {
         SearchBuilder::new(Site::Eh)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::dto::{category::Category, keyword::Keyword, search_offset::Offset, site::Site};
+    use crate::url::search::SearchBuilder;
+
+    #[test]
+    fn test_search_builder() {
+        let builder = SearchBuilder::new(Site::Eh);
+        let builder = builder
+            .offset(Offset::Prev(1, Some("1y".to_string())))
+            .mask_all_categories()
+            .toggle_category(Category::Doujinshi)
+            .enable_advanced_search()
+            .add_keyword(Keyword::Female("living clothes".to_string()));
+        let url = builder.build().unwrap();
+        println!("url: {}", url.to_string());
     }
 }

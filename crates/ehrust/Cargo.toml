@@ -1,0 +1,18 @@
+[package]
+name = "ehrust"
+version.workspace = true
+authors.workspace = true
+edition = "2021"
+description = "A command-line tool for transforming the e-hentai and exhentai content."
+license = "GPL-3.0"
+homepage = "https://github.com/pboymt/EhRust"
+repository = "https://github.com/pboymt/EhRust"
+readme = "README.md"
+keywords = ["e-hentai", "exhentai", "ehrust", "libeh"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio.workspace = true
+libeh = { path = "../libeh" }
+serde_yaml = { version = "0.9" }

@@ -16,3 +16,6 @@ Cargo.lock
 # Project configuration files
 .vscode/
 samples/
+/config.yaml
+/config.yml
+/config.json
