@@ -1,3 +1,5 @@
+pub mod auth;
 pub mod client;
-pub mod cookies;
+pub mod config;
 pub mod jar;
+pub mod proxy;
