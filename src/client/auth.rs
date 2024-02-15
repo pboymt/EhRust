@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// E-Hentai/ExHentai 用户身份验证信息
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EhClientAuth {
     /// E-Hentai/ExHentai 用户 ID
     pub ipb_member_id: String,
@@ -18,12 +20,26 @@ impl EhClientAuth {
             igneous: igneous.map(|s| s.to_string()),
         }
     }
+
+    /// 输出验证信息为一个键值对向量
+    pub fn to_vec(&self) -> Vec<(String, String)> {
+        let mut vec = Vec::new();
+        vec.push(("ipb_member_id".to_string(), self.ipb_member_id.to_string()));
+        vec.push(("ipb_pass_hash".to_string(), self.ipb_pass_hash.to_string()));
+        if let Some(igneous) = &self.igneous {
+            vec.push(("igneous".to_string(), igneous.to_string()));
+        }
+        vec
+    }
 }
 
 impl ToString for EhClientAuth {
     /// 将 EhClientAuth 实例转换为字符串
     fn to_string(&self) -> String {
-        let mut s = format!("ipb_member_id={}&ipb_pass_hash={}", self.ipb_member_id, self.ipb_pass_hash);
+        let mut s = format!(
+            "ipb_member_id={}&ipb_pass_hash={}",
+            self.ipb_member_id, self.ipb_pass_hash
+        );
         if let Some(igneous) = &self.igneous {
             s += &format!("&igneous={}", igneous);
         }
