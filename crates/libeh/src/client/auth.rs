@@ -46,3 +46,17 @@ impl ToString for EhClientAuth {
         s
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::client::auth::EhClientAuth;
+
+    #[test]
+    fn auth_to_string() {
+        let auth = EhClientAuth::new("123456", "123456", Some("abcdef"));
+        assert_eq!(
+            auth.to_string(),
+            "ipb_member_id=123456&ipb_pass_hash=123456&igneous=abcdef"
+        );
+    }
+}
