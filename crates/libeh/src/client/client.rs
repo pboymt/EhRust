@@ -100,6 +100,27 @@ impl EhClient {
         };
         Ok(json)
     }
+
+    pub async fn post_json<T, R>(&self, url: Url, body: T) -> Result<R, String>
+    where
+        T: Into<reqwest::Body>,
+        R: DeserializeOwned,
+    {
+        let res = self.client.post(url).body(body).send().await;
+        let res = match res {
+            Ok(res) => res,
+            Err(err) => {
+                return Err(format!("Error: {}", err));
+            }
+        };
+        let json = match res.json::<R>().await {
+            Ok(json) => json,
+            Err(err) => {
+                return Err(format!("Error: {}", err));
+            }
+        };
+        Ok(json)
+    }
 }
 
 #[cfg(test)]
