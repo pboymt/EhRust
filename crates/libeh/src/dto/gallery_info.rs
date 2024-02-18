@@ -6,7 +6,7 @@ use chrono::prelude::*;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GalleryInfo {
     /// 画廊 ID
-    pub gid: isize,
+    pub gid: i64,
     /// 画廊版本令牌
     pub token: String,
     /// 画廊标题

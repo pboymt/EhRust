@@ -2,17 +2,17 @@ use crate::utils::regex::regex;
 
 #[derive(Debug, Clone)]
 pub struct GalleryBuilder {
-    pub gid: isize,
+    pub gid: i64,
     pub token: String,
-    pub p: isize,
+    pub p: i64,
 }
 
 impl GalleryBuilder {
-    pub fn new(gid: isize, token: String) -> Self {
+    pub fn new(gid: i64, token: String) -> Self {
         Self { gid, token, p: 0 }
     }
 
-    pub fn page(&mut self, p: isize) -> &mut Self {
+    pub fn page(&mut self, p: i64) -> &mut Self {
         self.p = p;
         self
     }
@@ -28,7 +28,7 @@ impl GalleryBuilder {
         };
         Ok(Self {
             gid: {
-                let Ok(gid) = caps["gid"].parse::<isize>() else {
+                let Ok(gid) = caps["gid"].parse::<i64>() else {
                     return Err(format!("Failed to parse gallery gid: {}", s));
                 };
                 gid
