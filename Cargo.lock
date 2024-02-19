@@ -261,9 +261,9 @@ checksum = "3a68a4904193147e0a8dec3314640e6db742afd5f6e634f428a6af230d9b3591"
 
 [[package]]
 name = "ehrust"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
- "libeh 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "libeh 0.1.0",
  "serde_yaml",
  "tokio",
 ]
@@ -618,21 +618,6 @@ checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 [[package]]
 name = "libeh"
 version = "0.1.0"
-dependencies = [
- "chrono",
- "cookie 0.18.0",
- "regex",
- "reqwest",
- "scraper",
- "serde",
- "serde_json",
- "serde_yaml",
- "tokio",
-]
-
-[[package]]
-name = "libeh"
-version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87aad70de7c10a482ff9b5f188650bea0fe3476e567391bc7fbed4bd6f81eea3"
 dependencies = [
@@ -642,6 +627,21 @@ dependencies = [
  "reqwest",
  "scraper",
  "serde",
+ "tokio",
+]
+
+[[package]]
+name = "libeh"
+version = "0.1.1"
+dependencies = [
+ "chrono",
+ "cookie 0.18.0",
+ "regex",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "serde_yaml",
  "tokio",
 ]
 
