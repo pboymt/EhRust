@@ -4,7 +4,6 @@ pub mod tags;
 pub mod url;
 mod utils;
 
-#[tokio::test]
-async fn test() {
-    println!("Hello World!");
+pub fn version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }
