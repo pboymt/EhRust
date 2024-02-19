@@ -62,6 +62,13 @@ impl From<Keyword> for String {
     }
 }
 
+impl From<String> for Keyword {
+    fn from(s: String) -> Keyword {
+        let result = Keyword::from_str(&s);
+        result.unwrap_or(Keyword::Normal(s))
+    }
+}
+
 impl FromStr for Keyword {
     type Err = String;
 
