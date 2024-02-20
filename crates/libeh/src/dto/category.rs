@@ -35,16 +35,16 @@ impl From<Category> for u16 {
 
 impl From<String> for Category {
     fn from(value: String) -> Self {
-        match value.as_str() {
-            "Misc" => Category::Misc,
-            "Doujinshi" => Category::Doujinshi,
-            "Manga" => Category::Manga,
-            "Artist CG" => Category::ArtistCG,
-            "Game CG" => Category::GameCG,
-            "Image Set" => Category::ImageSet,
-            "Cosplay" => Category::Cosplay,
-            "Non-H" => Category::NonH,
-            "Western" => Category::Western,
+        match value.to_lowercase().as_str() {
+            "misc" => Category::Misc,
+            "doujinshi" => Category::Doujinshi,
+            "manga" => Category::Manga,
+            "artist cg" => Category::ArtistCG,
+            "game cg" => Category::GameCG,
+            "image set" => Category::ImageSet,
+            "cosplay" => Category::Cosplay,
+            "non-h" => Category::NonH,
+            "western" => Category::Western,
             _ => Category::Unknown,
         }
     }
