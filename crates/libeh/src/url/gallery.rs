@@ -4,16 +4,14 @@ use crate::{dto::site::Site, utils::regex::regex};
 
 #[derive(Debug, Clone)]
 pub struct GalleryBuilder {
-    pub site: Site,
     pub gid: i64,
     pub token: String,
     pub p: i64,
 }
 
 impl GalleryBuilder {
-    pub fn new(site: Site, gid: i64, token: &str) -> Self {
+    pub fn new(gid: i64, token: &str) -> Self {
         Self {
-            site,
             gid,
             token: token.to_string(),
             p: 0,
@@ -35,7 +33,6 @@ impl GalleryBuilder {
             return Err(format!("Failed to parse gallery url: {}", s));
         };
         Ok(Self {
-            site: Site::from(caps["site"].to_string()),
             gid: {
                 let Ok(gid) = caps["gid"].parse::<i64>() else {
                     return Err(format!("Failed to parse gallery gid: {}", s));
@@ -46,33 +43,23 @@ impl GalleryBuilder {
             p: 0,
         })
     }
-}
 
-impl From<GalleryBuilder> for Url {
-    fn from(builder: GalleryBuilder) -> Self {
-        let mut url: Url = builder.site.into();
-        url.set_path(&format!("g/{}/{}/", builder.gid, builder.token));
-        if builder.p > 0 {
-            url.set_query(Some(&format!("p={}", builder.p)));
+    pub fn ex_url(&self) -> Url {
+        let mut url: Url = Site::Ex.into();
+        url.set_path(&format!("g/{}/{}/", self.gid, self.token));
+        if self.p > 0 {
+            url.set_query(Some(&format!("p={}", self.p)));
         }
         url
     }
-}
-impl From<&GalleryBuilder> for Url {
-    fn from(builder: &GalleryBuilder) -> Self {
-        let mut url: Url = builder.site.into();
-        url.set_path(&format!("g/{}/{}/", builder.gid, builder.token));
-        if builder.p > 0 {
-            url.set_query(Some(&format!("p={}", builder.p)));
+
+    pub fn eh_url(&self) -> Url {
+        let mut url: Url = Site::Eh.into();
+        url.set_path(&format!("g/{}/{}/", self.gid, self.token));
+        if self.p > 0 {
+            url.set_query(Some(&format!("p={}", self.p)));
         }
         url
-    }
-}
-
-impl ToString for GalleryBuilder {
-    fn to_string(&self) -> String {
-        let url = Url::from(self);
-        url.to_string()
     }
 }
 
@@ -96,7 +83,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_gallery_builder_request() -> Result<(), Box<dyn std::error::Error>> {
-        let gallery_builder = GalleryBuilder::new(Site::Eh, 2519745, "76939e430f");
+        let gallery_builder = GalleryBuilder::new(2519745, "76939e430f");
         let proxy = EhClientProxy::new("http", "127.0.0.1", 7890);
         let config = EhClientConfig {
             site: Site::Eh,
@@ -104,7 +91,7 @@ mod tests {
             auth: None,
         };
         let client = EhClient::new(config);
-        let text = client.get_html(gallery_builder.into()).await?;
+        let text = client.get_html(gallery_builder.eh_url()).await?;
         let mut cwd = std::env::current_dir().unwrap();
         cwd.push("../../samples/gallery.html");
         println!("File: {}", cwd.display());
