@@ -128,19 +128,13 @@ impl GalleryDetail {
             None => return Err(format!("Failed to parse gallery detail: {}", "No detail.")),
         };
         // GID
-        let gid = match parse_to::<i64>(&caps["gid"]) {
-            Ok(gid) => gid,
-            Err(err) => panic!("Failed to parse gallery detail: {}", err),
-        };
+        let gid = parse_to::<i64>(&caps["gid"])?;
         gd.info.gid = gid;
         // Token
         let token = caps["token"].to_string();
         gd.info.token = token;
         // API UID
-        let api_uid = match parse_to::<i64>(&caps["apiuid"]) {
-            Ok(api_uid) => api_uid,
-            Err(err) => panic!("Failed to parse gallery detail: {}", err),
-        };
+        let api_uid = parse_to::<i64>(&caps["apiuid"])?;
         gd.api_uid = api_uid;
         // API KEY
         let api_key = caps["apikey"].to_string();
@@ -156,14 +150,10 @@ impl GalleryDetail {
                     gd.torrent_url = link;
                 }
             }
-            let text: Vec<String> = text_content(torrent_ele.text());
-            let text = text.join("");
+            let text = text_content(torrent_ele.text());
             let r = regex(PATTERN_TORRENT_COUNT)?;
             if let Some(caps) = r.captures(&text) {
-                let torrent_count = match parse_to::<i32>(&caps["count"]) {
-                    Ok(torrent_count) => torrent_count,
-                    Err(_) => panic!("Failed to parse gallery detail: {}", "No torrent count."),
-                };
+                let torrent_count = parse_to::<i32>(&caps["count"])?;
                 gd.torrent_count = torrent_count;
             }
         }
@@ -192,7 +182,6 @@ impl GalleryDetail {
         let s = selector("#gn")?;
         if let Some(title_ele) = d.select(&s).next() {
             let text = text_content(title_ele.text());
-            let text = text.join("");
             gd.info.title = text.trim().to_string();
         }
 
@@ -200,7 +189,6 @@ impl GalleryDetail {
         let s = selector("#gj")?;
         if let Some(title_ele) = d.select(&s).next() {
             let text = text_content(title_ele.text());
-            let text = text.join("");
             gd.info.title_jpn = text.trim().to_string();
         }
 
@@ -208,7 +196,6 @@ impl GalleryDetail {
         let s = selector("#gdc > div")?;
         if let Some(cat_ele) = d.select(&s).next() {
             let text = text_content(cat_ele.text());
-            let text = text.join("");
             gd.info.category = Category::from(text);
         }
 
@@ -216,7 +203,6 @@ impl GalleryDetail {
         let s = selector("#gdn")?;
         if let Some(uploader_ele) = d.select(&s).next() {
             let text = text_content(uploader_ele.text());
-            let text = text.join("");
             if !text.is_empty() && text != "(Disowned)" {
                 gd.info.uploader = Some(text.trim().to_string());
             }
@@ -229,7 +215,6 @@ impl GalleryDetail {
         let s = selector("#rating_count")?;
         if let Some(rating_ele) = d.select(&s).next() {
             let text = text_content(rating_ele.text());
-            let text = text.join("");
             if let Ok(value) = parse_to::<i64>(&text) {
                 gd.rating_count = value;
             }
@@ -239,7 +224,6 @@ impl GalleryDetail {
         let s = selector("#rating_label")?;
         if let Some(rating_ele) = d.select(&s).next() {
             let text = text_content(rating_ele.text());
-            let text = text.join("");
             if let Some(value) = text.split(" ").last() {
                 if let Ok(value) = parse_to::<f32>(&value) {
                     gd.info.rating = value;
@@ -251,7 +235,6 @@ impl GalleryDetail {
         let s = selector("#gdf")?;
         if let Some(favorite_ele) = d.select(&s).next() {
             let text = text_content(favorite_ele.text());
-            let text = text.join("");
             if text.contains("Add to Favorites") {
                 gd.is_favorited = false;
             } else {
@@ -271,9 +254,7 @@ impl GalleryDetail {
             if let Some(td1) = tr.first_element_child() {
                 if let Some(td2) = td1.next_sibling_element() {
                     let key_text = text_content(td1.text()); // 获取键文本
-                    let key_text = key_text.join("").trim().to_string(); // 清理键文本
                     let value_text = text_content(td2.text()); // 获取值文本
-                    let value_text = value_text.join("").trim().to_string(); // 清理值文本
                     match key_text.as_str() {
                         s if s.starts_with("Posted") => {
                             let posted = parse_posted(&value_text)?; // 解析发布日期
@@ -302,10 +283,7 @@ impl GalleryDetail {
                         s if s.starts_with("Length") => {
                             let r = regex(PATTERN_PAGES_TEXT)?; // 正则表达式
                             if let Some(caps) = r.captures(&value_text) {
-                                let pages = match parse_to::<i64>(&caps["length"]) {
-                                    Ok(pages) => pages, // 解析页面数
-                                    Err(_) => panic!("Failed to parse pages: {}", "No pages."),
-                                };
+                                let pages = parse_to::<i64>(&caps["length"])?;
                                 gd.info.pages = pages; // 设置页面数
                             }
                         }
@@ -316,17 +294,13 @@ impl GalleryDetail {
                                 _ => {
                                     let r = regex(PATTERN_FAVORITE_COUNT)?; // 正则表达式
                                     match r.captures(&value_text) {
-                                        Some(caps) => match caps["count"].parse::<i64>() {
-                                            Ok(count) => count, // 解析收藏数
-                                            Err(_) => panic!(
+                                        Some(caps) => parse_to::<i64>(&caps["count"])?,
+                                        None => {
+                                            return Err(format!(
                                                 "Failed to parse favorite count: {}",
                                                 "No count."
-                                            ),
-                                        },
-                                        None => panic!(
-                                            "Failed to parse favorite count: {}",
-                                            "No count."
-                                        ),
+                                            ))
+                                        }
                                     }
                                 }
                             }

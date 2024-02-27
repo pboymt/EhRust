@@ -12,8 +12,10 @@ pub fn selector(selector: &str) -> Result<Selector, String> {
     }
 }
 
-pub fn text_content(text: Text) -> Vec<String> {
-    text.map(|t| t.trim().to_string()).collect()
+pub fn text_content(text: Text) -> String {
+    let seq: Vec<String> = text.map(|t| t.trim().to_string()).collect();
+    let seq: Vec<String> = seq.into_iter().filter(|s| !s.is_empty()).collect();
+    seq.join(" ").to_string()
 }
 
 pub fn parse_posted(text: &str) -> Result<DateTime<Utc>, String> {

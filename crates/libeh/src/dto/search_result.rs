@@ -119,8 +119,7 @@ impl SearchResult {
             Some(element) => element,
             None => return Err(format!("")),
         };
-        let text: Vec<String> = text_content(glink.text());
-        let text = text.join("").to_string();
+        let text = text_content(glink.text());
         gi.title = text;
         if gi.title.is_empty() {
             return Err(format!("Failed to parse gallery info: {}", "No title."));
@@ -174,11 +173,7 @@ impl SearchResult {
             Some(element) => element,
             None => return Err(format!("Failed to parse gallery info: {}", "No category.")),
         };
-        let text = {
-            let text_map: Vec<String> = text_content(cn.text());
-            let t = text_map.join("");
-            t.to_string()
-        };
+        let text = text_content(cn.text());
         let category = Category::from(text);
         gi.category = category;
         // println!("Element: {:?}", category);
@@ -220,7 +215,7 @@ impl SearchResult {
             Some(element) => element,
             None => return Err(format!("Failed to parse gallery info: {}", "No pages.")),
         };
-        let text = text_content(pages.text()).join("");
+        let text = text_content(pages.text());
         let r = regex(r"(?<page>\d+) pages?")?;
         match r.captures(&text) {
             Some(caps) => {
@@ -247,7 +242,7 @@ impl SearchResult {
             Some(element) => element,
             None => return Err(format!("Failed to parse gallery info: {}", "No posted.")),
         };
-        let posted_text = text_content(posted.text()).join("");
+        let posted_text = text_content(posted.text());
         gi.posted = parse_posted(&posted_text)?;
         if let Some(style) = posted.attr("style") {
             gi.favorite_slot = match parse_favorite_slot(style) {
@@ -272,7 +267,7 @@ impl SearchResult {
             Some(element) => element,
             None => return Err(format!("Failed to parse gallery info: {}", "No glhide.")),
         };
-        let uploader = text_content(glhide.text()).join("");
+        let uploader = text_content(glhide.text());
         if uploader.ne("(Disowned)") {
             gi.uploader = Some(uploader);
         }
