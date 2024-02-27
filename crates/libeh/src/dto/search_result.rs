@@ -8,7 +8,9 @@ use crate::{
     url::gallery::GalleryBuilder,
     utils::{
         regex::regex,
-        scraper::{parse_favorite_slot, parse_posted, parse_rating, selector, text_content},
+        scraper::{
+            parse_favorite_slot, parse_posted, parse_rating, parse_to, selector, text_content,
+        },
     },
 };
 
@@ -223,7 +225,7 @@ impl SearchResult {
         match r.captures(&text) {
             Some(caps) => {
                 let page = {
-                    let Ok(page) = caps["page"].parse::<isize>() else {
+                    let Ok(page) = parse_to::<i64>(&caps["page"]) else {
                         return Err(format!(
                             "Failed to parse gallery info: {}",
                             "Page parse error."
