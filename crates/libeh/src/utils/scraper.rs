@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, NaiveDateTime, Utc};
 use scraper::{element_ref::Text, Selector};
 
@@ -78,5 +80,13 @@ pub fn parse_rating(text: &str) -> Result<f32, String> {
             }
         }
         None => Err(format!("Failed to parse rating: {}", "No rating.")),
+    }
+}
+
+pub fn parse_to<T: FromStr>(value: &str) -> Result<T, String> {
+    let result = value.parse::<T>();
+    match result {
+        Ok(value) => Ok(value),
+        Err(_) => Err(format!("Failed to parse to number: {}", value)),
     }
 }
