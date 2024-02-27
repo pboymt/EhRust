@@ -26,7 +26,7 @@ pub struct GalleryInfo {
     /// 画廊标签列表
     pub tags: Vec<Keyword>,
     /// 画廊页数
-    pub pages: isize,
+    pub pages: i64,
     /// 收藏夹
     pub favorite_slot: isize,
 }
