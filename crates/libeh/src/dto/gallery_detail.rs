@@ -1,12 +1,18 @@
+use std::str::FromStr;
+
+use chrono::{DateTime, Utc};
 use scraper::{Element, Html};
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{
-    regex::regex,
-    scraper::{parse_posted, parse_to, selector, text_content},
+use crate::{
+    url::gallery::GalleryBuilder,
+    utils::{
+        regex::regex,
+        scraper::{parse_posted, parse_to, selector, text_content},
+    },
 };
 
-use super::{category::Category, gallery_info::GalleryInfo};
+use super::{category::Category, gallery_info::GalleryInfo, keyword::Keyword};
 
 const PATTERN_ERROR: &'static str = r#"<div class="d">\n<p>([^<]+)</p>"#;
 const PATTERN_DETAIL: &'static str = r#"var gid = (?<gid>\d+);\s+?var token = "(?<token>[a-f0-9]+)";\s+?var apiuid = (?<apiuid>-?\d+);\s+?var apikey = "(?<apikey>[a-f0-9]+)";"#;
@@ -20,19 +26,25 @@ const PATTERN_ARCHIVE: &'static str =
 const PATTERN_ARCHIVE_ONCLICK: &'static str = r#"return popUp\('(?<link>[^']+)'[^)]+\)"#;
 const PATTERN_COVER: &'static str =
     r#"width:(?<width>\d+)px; height:(?<height>\d+)px.+?url\((?<link>.+?)\)"#;
+#[allow(dead_code)]
 const PATTERN_TAG_GROUP: &'static str =
     r#"<tr><td[^<>]+>([\w\s]+):</td><td>(?:<div[^<>]+><a[^<>]+>[\w\s]+</a></div>)+</td></tr>"#;
+#[allow(dead_code)]
 const PATTERN_TAG: &'static str = r#"<div[^<>]+><a[^<>]+>([\w\s]+)</a></div>"#;
+#[allow(dead_code)]
 const PATTERN_COMMENT: &'static str = r#"<div class=\"c3\">Posted on ([^<>]+) by: &nbsp; <a[^<>]+>([^<>]+)</a>.+?<div class=\"c6\"[^>]*>(.+?)</div><div class=\"c[78]\""#;
 #[allow(dead_code)]
 const PATTERN_PAGES: &'static str =
     r#"<tr><td[^<>]*>Length:</td><td[^<>]*>([\\d,]+) pages</td></tr>"#;
 const PATTERN_PAGES_TEXT: &'static str = r"(?<length>\d+) pages";
 const PATTERN_FAVORITE_COUNT: &'static str = r"(?<count>\d+) times";
-const PATTERN_RATING: &'static str = r"";
+const PATTERN_NEW_VERSION_DATETIME: &'static str = r"added (?<datetime>\d+-\d+-\d+ \d+:\d+)";
+#[allow(dead_code)]
 const PATTERN_PREVIEW_PAGES: &'static str =
     r#"<td[^>]+><a[^>]+>([\\d,]+)</a></td><td[^>]+>(?:<a[^>]+>)?&gt;(?:</a>)?</td>"#;
+#[allow(dead_code)]
 const PATTERN_NORMAL_PREVIEW: &'static str = r#"<div class=\"gdtm\"[^<>]*><div[^<>]*width:(\\d+)[^<>]*height:(\\d+)[^<>]*\\((.+?)\\)[^<>]*-(\\d+)px[^<>]*><a[^<>]*href=\"(.+?)\"[^<>]*><img alt=\"([\\d,]+)\""#;
+#[allow(dead_code)]
 const PATTERN_LARGE_PREVIEW: &'static str =
     r#"<div class=\"gdtl\".+?<a href=\"(.+?)\"><img alt=\"([\\d,]+)\".+?src=\"(.+?)\""#;
 
@@ -70,12 +82,36 @@ pub struct GalleryDetail {
     pub rating_count: i64,
     /// 收藏夹名称
     pub favorite_slot_name: Option<String>,
+    /// 更新版本画廊列表
+    pub new_versions: Vec<GalleryNewVersion>,
     // public GalleryTagGroup[] tags;
     // public GalleryCommentList comments;
     // public int previewPages;
     // public int SpiderInfoPreviewPages;
     // public PreviewSet previewSet;
     // public PreviewSet SpiderInfoPreviewSet;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GalleryNewVersion {
+    pub gid: i64,
+    pub token: String,
+    pub title: String,
+    pub update_at: DateTime<Utc>,
+}
+
+impl FromStr for GalleryNewVersion {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let builder = GalleryBuilder::parse(s.into())?;
+        Ok(Self {
+            gid: builder.gid,
+            token: builder.token,
+            title: String::new(),
+            update_at: DateTime::from_timestamp(0, 0).unwrap(),
+        })
+    }
 }
 
 impl Default for GalleryDetail {
@@ -96,6 +132,7 @@ impl Default for GalleryDetail {
             is_favorited: false,
             rating_count: 0,
             favorite_slot_name: None,
+            new_versions: Vec::new(),
         }
     }
 }
@@ -243,56 +280,98 @@ impl GalleryDetail {
             }
         }
 
+        // 解析画廊新版本
+        Self::parse_new_version(gd, &d)?;
+
+        // 解析画廊标签
+        Self::parse_tag_groups(gd, &d)?;
+
+        Ok(())
+    }
+
+    /// 解析当前画廊是否有新版本
+    fn parse_new_version(gd: &mut Self, d: &Html) -> Result<(), String> {
+        let s = selector("#gnd > a")?;
+        let r = regex(PATTERN_NEW_VERSION_DATETIME)?;
+        for ele in d.select(&s) {
+            if let Some(href) = ele.attr("href") {
+                let title = text_content(ele.text());
+                if let Some(next) = ele.next_sibling() {
+                    if next.value().is_text() {
+                        let text = next.value().as_text().unwrap();
+                        let text = text.trim().to_string();
+                        if let Some(caps) = r.captures(&text) {
+                            let datetime = caps["datetime"].to_string();
+                            let datetime = parse_posted(&datetime)?;
+                            let mut new_version = GalleryNewVersion::from_str(href)?;
+                            new_version.title = title;
+                            new_version.update_at = datetime;
+                            gd.new_versions.push(new_version);
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
     /// 解析画廊元数据
     fn parse_detail_info(gd: &mut Self, d: &Html) -> Result<(), String> {
-        let s = selector("#gdd > table > tbody > tr")?; // 选择器
+        // 选择器：获取表格各行
+        let s = selector("#gdd > table > tbody > tr")?;
         let selected = d.select(&s);
         for tr in selected {
             if let Some(td1) = tr.first_element_child() {
                 if let Some(td2) = td1.next_sibling_element() {
-                    let key_text = text_content(td1.text()); // 获取键文本
-                    let value_text = text_content(td2.text()); // 获取值文本
+                    // 获取键文本
+                    let key_text = text_content(td1.text());
+                    // 获取值文本
+                    let value_text = text_content(td2.text());
                     match key_text.as_str() {
                         s if s.starts_with("Posted") => {
-                            let posted = parse_posted(&value_text)?; // 解析发布日期
-                            gd.info.posted = posted; // 写入发布日期
+                            // 解析发布日期
+                            let posted = parse_posted(&value_text)?;
+                            // 写入发布日期
+                            gd.info.posted = posted;
                         }
                         s if s.starts_with("Parent") => {
-                            let s = selector("a")?; // 选择器
+                            let s = selector("a")?;
                             if let Some(a) = td2.select(&s).next() {
                                 if let Some(href) = a.attr("href") {
-                                    gd.parent = Some(href.into()); // 写入父链接
+                                    // 写入父链接
+                                    gd.parent = Some(href.into());
                                 }
                             }
                         }
                         s if s.starts_with("Visible") => {
+                            // 设置可见性
                             gd.visible = match value_text.trim() {
-                                s if s.starts_with("Yes") => true, // 设置可见性
+                                s if s.starts_with("Yes") => true,
                                 _ => false,
                             }
                         }
                         s if s.starts_with("Language") => {
-                            gd.language = value_text.replace("TR", ""); // 设置语言
+                            // 设置语言
+                            gd.language = value_text.replace("TR", "").trim().into();
                         }
                         s if s.starts_with("File Size") => {
-                            gd.size = value_text; // 设置文件大小
+                            // 写入文件大小
+                            gd.size = value_text;
                         }
                         s if s.starts_with("Length") => {
-                            let r = regex(PATTERN_PAGES_TEXT)?; // 正则表达式
+                            let r = regex(PATTERN_PAGES_TEXT)?;
                             if let Some(caps) = r.captures(&value_text) {
                                 let pages = parse_to::<i64>(&caps["length"])?;
                                 gd.info.pages = pages; // 设置页面数
                             }
                         }
                         s if s.starts_with("Favorited") => {
+                            // 设置收藏数
                             gd.favorite_count = match value_text.trim() {
-                                "Never" => 0, // 设置收藏数
+                                "Never" => 0,
                                 "Once" => 1,
                                 _ => {
-                                    let r = regex(PATTERN_FAVORITE_COUNT)?; // 正则表达式
+                                    let r = regex(PATTERN_FAVORITE_COUNT)?;
                                     match r.captures(&value_text) {
                                         Some(caps) => parse_to::<i64>(&caps["count"])?,
                                         None => {
@@ -324,6 +403,35 @@ impl GalleryDetail {
             None => Err(format!("Failed to parse cover style: {}", "No cover.")),
         }
     }
+
+    /// 解析标签组
+    fn parse_tag_groups(gd: &mut Self, d: &Html) -> Result<(), String> {
+        // 选择器：选择包含标签组的tr元素
+        let s = selector("#taglist tr")?;
+        // 遍历每个tr元素
+        for tr in d.select(&s) {
+            // 获取第一个td元素
+            if let Some(td1) = tr.first_element_child() {
+                // 获取下一个兄弟元素
+                if let Some(td2) = td1.next_sibling_element() {
+                    // 获取标签组类别
+                    let tag_category = text_content(td1.text());
+                    // 选择器：选择a元素
+                    let s = selector("a")?;
+                    // 遍历每个a元素
+                    for a in td2.select(&s) {
+                        // 获取标签
+                        let tag = text_content(a.text());
+                        // 创建关键词
+                        let keyword = Keyword::from_str(&format!("{}{}", tag_category, tag))?;
+                        // 将关键词添加到信息的标签列表中
+                        gd.info.tags.push(keyword);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -333,9 +441,9 @@ mod tests {
     use super::GalleryDetail;
 
     #[test]
-    fn test_parse() {
+    fn test_parse() -> Result<(), Box<dyn std::error::Error>> {
         let mut cwd = std::env::current_dir().unwrap();
-        cwd.push("../../samples/gallery_faved.html");
+        cwd.push("../../samples/gallery_old.html");
         let mut file = match File::open(cwd) {
             Ok(file) => file,
             Err(err) => panic!("Failed to open file: {}", err),
@@ -350,8 +458,11 @@ mod tests {
         match GalleryDetail::parse(html) {
             Ok(result) => {
                 println!("{:?}", result);
+                let json = serde_json::to_string(&result)?;
+                println!("{}", json);
             }
             Err(err) => panic!("Failed to parse search result: {}", err),
         }
+        Ok(())
     }
 }
