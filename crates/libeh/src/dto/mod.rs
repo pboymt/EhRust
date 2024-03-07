@@ -6,6 +6,10 @@ pub mod category;
 pub mod gallery_detail;
 /// 画廊信息
 pub mod gallery_info;
+/// 画廊评论
+pub mod gallery_comment;
+/// 画廊预览
+pub mod gallery_preview;
 /// 搜索关键词，各类标签的枚举及其转换方法
 pub mod keyword;
 /// 搜索结果的偏移量

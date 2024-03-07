@@ -12,7 +12,10 @@ use crate::{
     },
 };
 
-use super::{category::Category, gallery_info::GalleryInfo, keyword::Keyword};
+use super::{
+    category::Category, gallery_comment::GalleryComment, gallery_info::GalleryInfo,
+    gallery_preview::GalleryPreview, keyword::Keyword,
+};
 
 const PATTERN_ERROR: &'static str = r#"<div class="d">\n<p>([^<]+)</p>"#;
 const PATTERN_DETAIL: &'static str = r#"var gid = (?<gid>\d+);\s+?var token = "(?<token>[a-f0-9]+)";\s+?var apiuid = (?<apiuid>-?\d+);\s+?var apikey = "(?<apikey>[a-f0-9]+)";"#;
@@ -73,7 +76,6 @@ pub struct GalleryDetail {
     pub language: String,
     /// 画廊文件总大小
     pub size: String,
-    pub spider_info_pages: i64,
     /// 画廊收藏数
     pub favorite_count: i64,
     /// 画廊是否已收藏
@@ -84,12 +86,10 @@ pub struct GalleryDetail {
     pub favorite_slot_name: Option<String>,
     /// 更新版本画廊列表
     pub new_versions: Vec<GalleryNewVersion>,
-    // public GalleryTagGroup[] tags;
-    // public GalleryCommentList comments;
-    // public int previewPages;
-    // public int SpiderInfoPreviewPages;
-    // public PreviewSet previewSet;
-    // public PreviewSet SpiderInfoPreviewSet;
+    /// 画廊评论
+    pub comments: Vec<GalleryComment>,
+    /// 画廊预览
+    pub preview: GalleryPreview,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,12 +127,13 @@ impl Default for GalleryDetail {
             visible: false,
             language: String::new(),
             size: String::new(),
-            spider_info_pages: 0,
             favorite_count: 0,
             is_favorited: false,
             rating_count: 0,
             favorite_slot_name: None,
             new_versions: Vec::new(),
+            comments: Vec::new(),
+            preview: GalleryPreview::default(),
         }
     }
 }
@@ -153,12 +154,14 @@ impl GalleryDetail {
 
         let mut gallery_detail = Self::default();
         let d = Html::parse_document(&html);
-        Self::parse_detail(&mut gallery_detail, d, html)?;
+        Self::parse_detail(&mut gallery_detail, &d, html)?;
+        let comments = GalleryComment::parse(&d)?;
+        gallery_detail.comments = comments;
         Ok(gallery_detail)
     }
 
     /// 解析画廊详情
-    fn parse_detail(gd: &mut Self, d: Html, html: String) -> Result<(), String> {
+    fn parse_detail(gd: &mut Self, d: &Html, html: String) -> Result<(), String> {
         let r = regex(PATTERN_DETAIL)?;
         let caps = match r.captures(&html) {
             Some(caps) => caps,
@@ -460,6 +463,7 @@ mod tests {
                 println!("{:?}", result);
                 let json = serde_json::to_string(&result)?;
                 println!("{}", json);
+                println!("{:?}", result.comments[1]);
             }
             Err(err) => panic!("Failed to parse search result: {}", err),
         }
