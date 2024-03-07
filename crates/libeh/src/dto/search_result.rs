@@ -111,7 +111,12 @@ impl SearchResult {
         let s = selector(".glname")?;
         let glname = match tr.select(&s).next() {
             Some(element) => element,
-            None => return Err(format!("Failed to parse gallery info: {}", "No title.")),
+            None => {
+                return Err(format!(
+                    "Failed to parse gallery title: {}",
+                    "No valid title."
+                ))
+            }
         };
 
         let s = selector(".glink")?;
@@ -122,7 +127,10 @@ impl SearchResult {
         let text = text_content(glink.text());
         gi.title = text;
         if gi.title.is_empty() {
-            return Err(format!("Failed to parse gallery info: {}", "No title."));
+            return Err(format!(
+                "Failed to parse gallery title: {}",
+                "Title is empty."
+            ));
         }
 
         // 提取画廊id和token
