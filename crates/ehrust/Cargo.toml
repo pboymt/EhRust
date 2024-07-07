@@ -15,5 +15,9 @@ categories = ["command-line-utilities"]
 
 [dependencies]
 tokio.workspace = true
+dotenvy.workspace = true
+log.workspace = true
+env_logger.workspace = true
 libeh = { version = "0.1" }
 serde_yaml = { version = "0.9" }
+serde_json = { version = "1" }

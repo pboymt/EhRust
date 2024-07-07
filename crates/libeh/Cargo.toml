@@ -15,6 +15,8 @@ keywords = ["e-hentai", "exhentai", "ehrust", "libeh"]
 [dependencies]
 tokio.workspace = true
 dotenvy.workspace = true
+log.workspace = true
+env_logger.workspace = true
 reqwest = { version = "0.11", features = ["json", "cookies"] }
 serde = { version = "1.0", features = ["derive"] }
 scraper = { version = "0.18" }
