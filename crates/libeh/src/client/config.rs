@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::env;
 
 use crate::dto::site::Site;
 
@@ -13,6 +14,19 @@ pub struct EhClientConfig {
     pub proxy: Option<EhClientProxy>,
     /// 用户身份验证设置，默认为 None
     pub auth: Option<EhClientAuth>,
+}
+
+impl EhClientConfig {
+    /// 从环境变量中读取配置
+    pub fn env() -> Self {
+        let site = env::var("EH_SITE").unwrap();
+        let site = Site::from(site);
+        EhClientConfig {
+            site,
+            proxy: EhClientProxy::env(),
+            auth: EhClientAuth::env(),
+        }
+    }
 }
 
 impl Default for EhClientConfig {
@@ -83,5 +97,14 @@ proxy:
         let result = serde_yaml::from_str::<EhClientConfig>(config);
         assert!(result.is_ok());
         println!("{:?}", result.unwrap());
+    }
+
+    #[test]
+    fn config_from_env() {
+        use dotenvy::dotenv;
+        use crate::client::config::EhClientConfig;
+        dotenv().ok();
+        let config = EhClientConfig::env();
+        println!("{:?}", config);
     }
 }

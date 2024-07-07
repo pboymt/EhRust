@@ -1,4 +1,6 @@
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
+use std::env;
 
 /// EhClient 代理
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,6 +17,25 @@ impl EhClientProxy {
             protocol: protocol.to_string(),
             host: host.to_string(),
             port,
+        }
+    }
+
+    /// 从环境变量中获取代理设置
+    pub fn env() -> Option<Self> {
+        let url = if let Ok(url) = env::var("EH_PROXY") {
+            url
+        } else if let Ok(url) = env::var("HTTP_PROXY") {
+            url
+        } else {
+            return None;
+        };
+        if let Ok(url) = Url::parse(&url) {
+            let schema = url.scheme();
+            let host = url.host_str().unwrap();
+            let port = url.port().unwrap();
+            Some(EhClientProxy::new(schema, host, port.into()))
+        } else {
+            None
         }
     }
 }

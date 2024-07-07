@@ -1,3 +1,5 @@
+use std::env;
+
 use serde::{Deserialize, Serialize};
 
 /// E-Hentai/ExHentai 用户身份验证信息
@@ -19,6 +21,23 @@ impl EhClientAuth {
             ipb_pass_hash: ipb_pass_hash.to_string(),
             igneous: igneous.map(|s| s.to_string()),
         }
+    }
+
+    /// 从环境变量中读取 EhClientAuth 信息
+    pub fn env() -> Option<Self> {
+        let ipb_member_id = if let Ok(ipb_member_id) = env::var("EH_AUTH_ID") {
+            ipb_member_id
+        } else {
+            return None;
+        };
+        let ipb_pass_hash = if let Ok(ipb_pass_hash) = env::var("EH_AUTH_HASH") {
+            ipb_pass_hash
+        } else {
+            return None;
+        };
+        let igneous = env::var("EH_AUTH_IGNEOUS").ok();
+        let auth = EhClientAuth::new(&ipb_member_id, &ipb_pass_hash, igneous.as_deref());
+        Some(auth)
     }
 
     /// 输出验证信息为一个键值对向量

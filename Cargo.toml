@@ -9,3 +9,4 @@ authors = ["pboymt"]
 
 [workspace.dependencies]
 tokio = { version = "1", features = ["full"] }
+dotenvy = {version = "0.15"}

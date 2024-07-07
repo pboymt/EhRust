@@ -19,3 +19,4 @@ samples/
 /config.yaml
 /config.yml
 /config.json
+/.env
