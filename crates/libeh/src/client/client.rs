@@ -135,10 +135,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_eh_client() {
-        let proxy = EhClientProxy::new("http", "127.0.0.1", 7890);
+        let proxy = if dotenvy::dotenv().is_ok() {
+            EhClientProxy::env()
+        } else {
+            Some(EhClientProxy::new("http", "127.0.0.1", 7897))
+        };
         let config = EhClientConfig {
             site: Site::Eh,
-            proxy: Some(proxy),
+            proxy: proxy,
             auth: None,
         };
         let client = EhClient::new(config);
