@@ -19,7 +19,7 @@ pub struct EhClientConfig {
 impl EhClientConfig {
     /// 从环境变量中读取配置
     pub fn env() -> Self {
-        let site = env::var("EH_SITE").unwrap();
+        let site = env::var("EH_SITE").unwrap_or("e-hentai.org".to_owned());
         let site = Site::from(site);
         EhClientConfig {
             site,
@@ -101,8 +101,8 @@ proxy:
 
     #[test]
     fn config_from_env() {
-        use dotenvy::dotenv;
         use crate::client::config::EhClientConfig;
+        use dotenvy::dotenv;
         dotenv().ok();
         let config = EhClientConfig::env();
         println!("{:?}", config);

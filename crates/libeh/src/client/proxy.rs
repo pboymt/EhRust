@@ -31,8 +31,8 @@ impl EhClientProxy {
         };
         if let Ok(url) = Url::parse(&url) {
             let schema = url.scheme();
-            let host = url.host_str().unwrap();
-            let port = url.port().unwrap();
+            let host = url.host_str().unwrap_or("localhost");
+            let port = url.port().unwrap_or(1080);
             Some(EhClientProxy::new(schema, host, port.into()))
         } else {
             None
