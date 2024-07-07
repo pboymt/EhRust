@@ -42,6 +42,7 @@ pub struct GalleryComment {
     pub last_edited: Option<DateTime<Utc>>,
 }
 
+/// 画廊评论投票状态
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GalleryCommentVoteState {
     pub base: i64,
@@ -49,6 +50,7 @@ pub struct GalleryCommentVoteState {
     pub more: i64,
 }
 
+/// 画廊评论投票
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GalleryCommentVote {
     pub user: String,
@@ -83,6 +85,7 @@ impl GalleryComment {
         }
     }
 
+    /// 解析画廊评论
     pub fn parse(d: &Html) -> Result<Vec<GalleryComment>, String> {
         let r_comment_time = regex(PATTERN_COMMENT_TIME)?;
         let r_comment_id = regex(PATTERN_COMMENT_ID)?;

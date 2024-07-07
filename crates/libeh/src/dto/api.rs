@@ -20,6 +20,8 @@ impl GIDListItem {
 }
 
 impl From<String> for GIDListItem {
+
+    /// 从画廊 URL 字符串转换为画廊 ID 及其令牌
     fn from(value: String) -> Self {
         const URL_PATTERN: &'static str =
             r"^https://e[\-x]hentai.org/g/(?<gid>\d+)/(?<token>[a-f0-9]+)/?";
@@ -119,6 +121,7 @@ pub struct GalleryMetadataError {
 pub struct PageListItem(i64, String, i32);
 
 impl From<String> for PageListItem {
+    /// 将包含画廊 ID、页面令牌和页号的 URL 字符串转换为请求数据
     fn from(value: String) -> Self {
         const URL_PATTERN: &'static str =
             r"^https://e[\-x]hentai.org/s/(?<ptoken>[a-f0-9]+)/(?<gid>\d+)-(?<pnum>\d+)/?";
@@ -199,7 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_gallery_metadata_request() {
-        let proxy = EhClientProxy::new("http", "127.0.0.1", 7890);
+        let proxy = EhClientProxy::new("http", "127.0.0.1", 7897);
         let config = EhClientConfig {
             site: Site::Eh,
             proxy: Some(proxy),
@@ -222,7 +225,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_gallery_token_request() {
-        let proxy = EhClientProxy::new("http", "127.0.0.1", 7890);
+        let proxy = EhClientProxy::new("http", "127.0.0.1", 7897);
         let config = EhClientConfig {
             site: Site::Eh,
             proxy: Some(proxy),
