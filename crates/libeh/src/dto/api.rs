@@ -52,7 +52,7 @@ impl GalleryMetadataRequest {
     /// 将包含画廊 ID 及其令牌的列表转换为请求数据
     pub fn new(gidlist: Vec<GIDListItem>) -> Self {
         Self {
-            method: "gdata".to_string(),
+            method: "gdata".into(),
             gidlist,
             namespace: 1,
         }

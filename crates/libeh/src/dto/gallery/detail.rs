@@ -5,16 +5,15 @@ use scraper::{Element, Html};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    dto::{gallery::{
+        category::Category, comment::GalleryComment, info::GalleryInfo,
+        preview::GalleryPreview,
+    }, keyword::Keyword},
     url::gallery::GalleryBuilder,
     utils::{
         regex::regex,
         scraper::{parse_posted, parse_to, selector, text_content},
     },
-};
-
-use super::{
-    category::Category, gallery_comment::GalleryComment, gallery_info::GalleryInfo,
-    gallery_preview::GalleryPreview, keyword::Keyword,
 };
 
 const PATTERN_ERROR: &'static str = r#"<div class="d">\n<p>([^<]+)</p>"#;

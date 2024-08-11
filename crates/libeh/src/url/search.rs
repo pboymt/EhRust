@@ -1,4 +1,6 @@
-use crate::dto::{category::Category, keyword::Keyword, search_offset::Offset, site::Site};
+use crate::dto::{
+    gallery::category::Category, keyword::Keyword, search_offset::Offset, site::Site,
+};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::vec;
@@ -295,7 +297,9 @@ impl Default for SearchBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::dto::{category::Category, keyword::Keyword, search_offset::Offset, site::Site};
+    use crate::dto::{
+        gallery::category::Category, keyword::Keyword, search_offset::Offset, site::Site,
+    };
     use crate::url::search::SearchBuilder;
 
     #[test]

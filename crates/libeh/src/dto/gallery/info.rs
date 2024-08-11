@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::dto::{category::Category, keyword::Keyword};
+use crate::dto::{gallery::category::Category, keyword::Keyword};
 use chrono::prelude::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ impl Default for GalleryInfo {
             title: "".to_string(),
             title_jpn: "".to_string(),
             thumb: "".to_string(),
-            category: Category::Unknown,
+            category: Category::None,
             posted: DateTime::<Utc>::MIN_UTC,
             uploader: None,
             rating: -1.0,

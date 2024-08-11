@@ -4,7 +4,7 @@ use scraper::{ElementRef, Html};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    dto::{category::Category, keyword::Keyword},
+    dto::{gallery::category::Category, keyword::Keyword},
     url::gallery::GalleryBuilder,
     utils::{
         regex::regex,
@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use super::gallery_info::GalleryInfo;
+use super::gallery::info::GalleryInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
