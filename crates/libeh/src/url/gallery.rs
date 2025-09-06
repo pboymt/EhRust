@@ -83,8 +83,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_gallery_builder_request() -> Result<(), Box<dyn std::error::Error>> {
-        let gallery_builder = GalleryBuilder::new(2519745, "76939e430f");
-        let proxy = EhClientProxy::new("http", "127.0.0.1", 7890);
+        let gallery_builder = GalleryBuilder::new(2791585, "3e7e1c7107");
+        let proxy = EhClientProxy::new("http", "127.0.0.1", 7897);
         let config = EhClientConfig {
             site: Site::Eh,
             proxy: Some(proxy),

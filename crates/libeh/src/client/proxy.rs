@@ -5,8 +5,11 @@ use std::env;
 /// EhClient 代理
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EhClientProxy {
+    /// 代理协议
     pub protocol: String,
+    /// 代理主机
     pub host: String,
+    /// 代理端口
     pub port: i32,
 }
 

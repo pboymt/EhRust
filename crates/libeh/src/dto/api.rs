@@ -77,7 +77,7 @@ pub struct GalleryTorrent {
 pub struct GalleryMetadata {
     pub gid: i64,
     pub token: String,
-    pub archiver_key: String,
+    pub archiver_key: Option<String>,
     pub title: String,
     pub title_jpn: String,
     pub category: String,
@@ -213,14 +213,14 @@ mod tests {
         // let body =
         //     GalleryMetadataRequest::new(vec![GIDListItem(2465890, "8af9a35448".to_string())]);
         let body = GalleryMetadataRequest::new(vec![GIDListItem::from(
-            "https://e-hentai.org/g/2519745/76939e430f/".to_string(),
+            "https://e-hentai.org/g/2791585/3e7e1c7107/".to_string(),
         )]);
         let body = serde_json::to_string(&body).unwrap();
         let res: Result<GalleryMetadataResponse, String> = client.post_json(url, body).await;
         let res = res.unwrap();
         assert_eq!(res.gmetadata.len(), 1);
-        assert_eq!(res.gmetadata[0].gid, 2519745);
-        assert_eq!(res.gmetadata[0].token, "76939e430f".to_string());
+        assert_eq!(res.gmetadata[0].gid, 2791585);
+        assert_eq!(res.gmetadata[0].token, "3e7e1c7107".to_string());
     }
 
     #[tokio::test]
