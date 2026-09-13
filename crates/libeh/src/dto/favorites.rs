@@ -61,15 +61,13 @@ impl FavoriteCategories {
             if cells.len() < 3 {
                 continue;
             }
-            let count_cell = scraper::ElementRef::wrap(cells[0]);
-            let name_cell = scraper::ElementRef::wrap(cells[2]);
-            if let Some(cell) = count_cell {
-                result
-                    .counts
-                    .push(parse_to::<i64>(&text_content(cell.text())).unwrap_or(0));
-            }
-            if let Some(cell) = name_cell {
-                result.names.push(text_content(cell.text()));
+            // 计数与名称必须成对写入，避免个别槽位缺列时两个数组错位
+            let count = scraper::ElementRef::wrap(cells[0])
+                .map(|cell| parse_to::<i64>(&text_content(cell.text())).unwrap_or(0));
+            let name = scraper::ElementRef::wrap(cells[2]).map(|cell| text_content(cell.text()));
+            if let (Some(count), Some(name)) = (count, name) {
+                result.counts.push(count);
+                result.names.push(name);
             }
         }
 

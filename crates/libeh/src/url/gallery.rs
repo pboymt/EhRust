@@ -9,8 +9,8 @@
 //!   从任意文本中提取 gid 与 token。strict 模式要求完整合法 URL
 //!   （与站点 API 文档一致），宽松模式从混合文本中抽取
 //!   `gid/token` 片段（对齐 EhViewer `GalleryDetailUrlParser` 的双模式）；
-//! - **构建**（[`GalleryBuilder::eh_url`] / [`GalleryBuilder::ex_url`]）：
-//!   生成对应站点的详情页 URL。
+//! - **构建**（[`GalleryBuilder::url`] / [`GalleryBuilder::eh_url`] /
+//!   [`GalleryBuilder::ex_url`]）：生成对应站点的详情页 URL（`url()` 使用解析时保留的站点）。
 //!
 //! # 示例
 //!
@@ -59,6 +59,8 @@ static URL_LOOSE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 /// 画廊 URL 的构建器与解析结果。
 ///
 /// `p` 为详情页的预览页码（0 表示第一页，不产生 `?p=` 参数）。
+/// 解析得到的构建器会**保留原 URL 的站点**（[`GalleryBuilder::url`]）；
+/// [`GalleryBuilder::eh_url`] / [`GalleryBuilder::ex_url`] 用于显式跨站构造。
 #[derive(Debug, Clone)]
 pub struct GalleryBuilder {
     /// 画廊 ID。
@@ -67,16 +69,19 @@ pub struct GalleryBuilder {
     pub token: String,
     /// 详情页预览页码（0 基；0 时不写入 `?p=`）。
     pub p: i64,
+    /// 画廊所在站点：解析时取自原 URL，手工构造时默认表站。
+    pub site: Site,
 }
 
 impl GalleryBuilder {
-    /// 以 gid 与 token 创建构建器（预览页码为 0）。
+    /// 以 gid 与 token 创建构建器（预览页码为 0，站点为表站）。
     #[must_use]
     pub fn new(gid: i64, token: &str) -> Self {
         Self {
             gid,
             token: token.to_string(),
             p: 0,
+            site: Site::Eh,
         }
     }
 
@@ -116,10 +121,12 @@ impl GalleryBuilder {
         let gid = caps["gid"]
             .parse::<i64>()
             .map_err(|e| Error::parse("gallery url gid", e.to_string(), s.clone()))?;
+        let site = Site::from(caps[0].to_string());
         Ok(Self {
             gid,
             token: caps["token"].to_string(),
             p: 0,
+            site,
         })
     }
 
@@ -133,6 +140,16 @@ impl GalleryBuilder {
     #[must_use]
     pub fn eh_url(&self) -> Url {
         self.build_url(Site::Eh)
+    }
+
+    /// 构建画廊**原站点**的详情页 URL。
+    ///
+    /// 解析路径（[`GalleryBuilder::parse`]）保留原 URL 的站点；
+    /// 手工构造（[`GalleryBuilder::new`]）默认表站。
+    /// 抓取画廊详情应使用本方法——里站专属画廊在表站不可见。
+    #[must_use]
+    pub fn url(&self) -> Url {
+        self.build_url(self.site)
     }
 
     /// 以指定站点构建详情页 URL（`p > 0` 时附加 `?p=` 查询参数）。
@@ -149,9 +166,22 @@ impl GalleryBuilder {
 #[cfg(test)]
 mod tests {
     use super::GalleryBuilder;
+    use crate::dto::site::Site;
     use crate::error::Error;
 
     /// 迁移自 EhViewer `GalleryDetailUrlParserTest` 的参数化用例表。
+    #[test]
+    fn parse_preserves_site() {
+        // 复审回归：解析结果保留原 URL 站点，里站专属画廊不应被指到表站
+        let ex = GalleryBuilder::parse("https://exhentai.org/g/123/abcd123456/".into()).unwrap();
+        assert_eq!(ex.site, Site::Ex);
+        assert!(ex.url().as_str().starts_with("https://exhentai.org/"));
+        let eh = GalleryBuilder::parse("https://e-hentai.org/g/123/abcd123456/".into()).unwrap();
+        assert_eq!(eh.site, Site::Eh);
+        // 手工构造默认表站
+        assert_eq!(GalleryBuilder::new(1, "abcd123456").site, Site::Eh);
+    }
+
     #[test]
     fn parse_cases_from_ehviewer() {
         // (输入, strict, 期望: Some((gid, token)) 或 None)

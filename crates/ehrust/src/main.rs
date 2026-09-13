@@ -125,11 +125,13 @@ async fn run_search(
 }
 
 /// 执行画廊子命令：抓取详情页并打印摘要。
+///
+/// 使用解析自 URL 的原站点（里站专属画廊在表站不可见）。
 async fn run_gallery(config: EhClientConfig, url: String) -> Result<(), Error> {
     let builder = GalleryBuilder::parse(url)?;
     println!("Config: {config:?}");
     let client = EhClient::try_new(config)?;
-    let html = client.get_html(builder.eh_url()).await?;
+    let html = client.get_html(builder.url()).await?;
     let detail = GalleryDetail::parse(html)?;
     println!("title: {}", detail.info.title);
     println!("category: {:?}", detail.info.category);

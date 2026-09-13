@@ -109,6 +109,11 @@ impl SearchResult {
             return Ok(result);
         }
 
+        // 未登录访问收藏夹等页面：站点返回登录引导页而非列表
+        if crate::utils::regex::contains_phrase(&html, "This page requires you to log on.") {
+            return Err(Error::Protocol("This page requires you to log on.".into()));
+        }
+
         let d = Html::parse_document(&html);
 
         Self::parse_search_nav(&d, &mut result)?;

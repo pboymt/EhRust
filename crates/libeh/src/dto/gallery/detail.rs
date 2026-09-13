@@ -68,8 +68,8 @@ const OFFENSIVE_STRING: &str =
 const PINING_STRING: &str = "<p>This gallery is pining for the fjords.</p>";
 /// 画廊不可用页特征。
 const UNAVAILABLE_STRING: &str = "This gallery is unavailable";
-/// 通用错误框特征（`class="d"` 容器内首段文本为错误说明）。
-const PATTERN_ERROR: &str = r#"<div class="d">\n<p>([^<]+)</p>"#;
+/// 通用错误框特征（`class="d"` 容器内首段文本为错误说明；行间空白不敏感）。
+const PATTERN_ERROR: &str = r#"<div class="d">\s*<p>([^<]+)</p>"#;
 
 /// 画廊详情，由画廊详情页面解析获得。
 ///
