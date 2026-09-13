@@ -6,5 +6,7 @@ pub mod comment;
 pub mod detail;
 /// 画廊信息
 pub mod info;
+/// 图片页（`/s/…`）的解析器
+pub mod page;
 /// 画廊预览
 pub mod preview;

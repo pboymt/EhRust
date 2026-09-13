@@ -77,6 +77,31 @@
   `db.text.json` 移入 `crates/libeh/` 供离线测试；`tags` 结构体去重
   （`url/test.rs` 的重复定义删除）。
 
+
+### 新增（0.2.0 追加，路线图 P0/P1 首批）
+
+- **图片页解析器** `dto::gallery::page::GalleryPage`：`/s/{pToken}/{gid}-{page}`
+  → 图片地址、`showkey`、`skipHathKey`（含 `image_url_with_skip_hath()`
+  换源 URL 生成）、原图 `fullimg.php` 链接与 `prompt()` 直链。
+- **api.php `showpage`**：`GalleryPageApiRequest` +
+  `parse_gallery_page_response`（`i3`/`i6`/`i7` 内嵌 HTML 提取，
+  顶层 `error` 识别）+ `EhClient::gallery_page`。
+- **分页迭代器** `client::pagination::SearchPager`：`next().await` 逐页
+  拉取搜索结果（数字分页），页号自动推进、出错即停。
+- **`SearchBuilder::page`**：数字分页参数 `page=N`。
+- **种子列表解析器** `dto::torrent::TorrentEntry::parse_page`：
+  发布时间/体积/做种数/下载次数；自动剥离下载链接的 `?p=` 私钥参数；
+  `EhClient::torrents`。
+- **账密登录** `EhClient::login`：论坛 IPB 表单 POST，
+  成功后把 `Set-Cookie` 复制写入两个站点域（`dto::signin::parse_sign_in`
+  解析昵称与 IPB 错误框）；客户端现持有 `Arc<Jar>` 句柄支持运行期补 Cookie。
+- **收藏夹流程**：`EhClient::favorites`（槽位统计 + 画廊列表合并为
+  `FavoritesPage`）、`EhClient::add_favorite`（加/删收藏 + 备注）、
+  `EhClient::modify_favorites`（批量移动/删除）；表单操作公共底座
+  `post_form`（带状态码检查与协议嗅探）。
+- **分级超时**（复审 N1）：连接 10s（客户端级）+ 页面 30s / api.php 15s
+  （按请求设置），为后续大文件下载预留更长超时的空间。
+
 ### 破坏性变更
 
 - 所有 fallible API 的错误类型由 `String` 变为 `libeh::error::Error`；

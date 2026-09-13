@@ -28,7 +28,7 @@ This library encapsulates functions that request API and page content from EH to
   - [x] Proxy / 代理配置（HTTP/HTTPS/SOCKS5）
   - [x] Error / 统一错误类型（thiserror）
 - [x] Data Transfer Object / 数据传输对象（搜索结果/画廊详情/评论/预览/收藏夹/api.php）
-  - [ ] Image Page / 图片页解析（`/s/…` 的图片 URL 与 showkey，待实现）
+  - [x] Image Page / 图片页解析（`/s/…` 的图片地址、showkey、换源参数、原图链接；api.php `showpage` 已接线）
 - [x] Tag Manager / 标签管理器（EhTagTranslation 数据结构）
 - [x] URL Builder / URL 生成器（搜索 + 画廊，含严格/宽松双模式解析）
 - [x] Utils / 工具（正则、scraper 辅助、serde 反序列化器）
@@ -39,6 +39,14 @@ This library encapsulates functions that request API and page content from EH to
 - [x] gallery 子命令（详情页摘要）
 - [x] 配置合并：环境变量 → YAML → 命令行参数
 - [ ] gallerytorrents / archiver 子命令（待实现）
+
+### Extra / 站点能力（0.2.0 新增）
+
+- [x] 种子列表解析（`dto::torrent`，自动剥离 `?p=` 私钥）
+- [x] 账密登录（`EhClient::login`，双域 Cookie 补写）
+- [x] 收藏夹读取 / 添加 / 批量移动删除
+- [x] 搜索分页迭代器（`client::pagination::SearchPager`）
+- [x] 按操作分级超时（页面 30s / API 15s）
 
 ### Quality Gates / 质量门禁
 

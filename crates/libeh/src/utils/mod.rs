@@ -6,3 +6,31 @@
 pub mod regex;
 pub mod scraper;
 pub mod serde;
+
+/// 反转义站点文本中的 XML/HTML 实体。
+///
+/// 覆盖站点实际会出现的五种实体：`&amp;`、`&lt;`、`&gt;`、`&quot;`、
+/// `&#039;`（含数字形式 `&#39;`）。未识别的实体原样保留。
+#[must_use]
+pub fn unescape_xml(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#039;", "'")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
+#[cfg(test)]
+mod unescape_tests {
+    #[test]
+    fn unescapes_common_entities() {
+        use super::unescape_xml;
+        assert_eq!(
+            unescape_xml("a&amp;b&#039;c&quot;d&lt;e&gt;f"),
+            "a&b'c\"d<e>f"
+        );
+        // &amp; 必须最后处理，避免 &amp;lt; 被二次反转义
+        assert_eq!(unescape_xml("&amp;lt;"), "&lt;");
+    }
+}

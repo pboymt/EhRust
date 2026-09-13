@@ -20,6 +20,7 @@
 use scraper::Html;
 use serde::{Deserialize, Serialize};
 
+use crate::dto::search_result::SearchResult;
 use crate::error::Error;
 use crate::utils::scraper::{parse_to, selector, text_content};
 
@@ -84,4 +85,21 @@ impl FavoriteCategories {
 
         Ok(result)
     }
+}
+
+/// 收藏夹页面的完整解析结果。
+///
+/// `favorites.php` 同时承载槽位统计（[`FavoriteCategories`]）与
+/// 画廊列表（[`SearchResult`]），本结构把两者合并返回。
+///
+/// 获取与增删的调用方式见
+/// [`EhClient::favorites`](crate::client::client::EhClient::favorites) /
+/// [`EhClient::add_favorite`](crate::client::client::EhClient::add_favorite) /
+/// [`EhClient::modify_favorites`](crate::client::client::EhClient::modify_favorites)。
+#[derive(Debug, Clone, Default)]
+pub struct FavoritesPage {
+    /// 10 个收藏夹的名称与计数。
+    pub categories: FavoriteCategories,
+    /// 当前收藏夹内的画廊列表（含分页信息）。
+    pub result: SearchResult,
 }

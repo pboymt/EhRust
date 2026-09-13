@@ -119,6 +119,8 @@ pub struct SearchBuilder {
     _site: Site,
     _watched: bool,
     _offset: Option<Offset>,
+    /// 数字分页页号（0 = 不发送 `page` 参数）。
+    _page: usize,
     /// 分类排除掩码（置位 = 排除），即站点 `f_cats` 参数的原值。
     _category: u16,
     _keywords: Vec<Keyword>,
@@ -135,6 +137,7 @@ impl SearchBuilder {
             _site: site,
             _watched: false,
             _offset: None,
+            _page: 0,
             _category: 0,
             _keywords: Vec::new(),
             _advsearch: AdvancedSearch::default(),
@@ -168,6 +171,18 @@ impl SearchBuilder {
     #[must_use]
     pub fn clear_offset(mut self) -> Self {
         self._offset = None;
+        self
+    }
+
+    /// 设置数字分页页号（query 参数 `page=N`，0 表示不发送 = 第一页）。
+    ///
+    /// 仅当页面使用 `table.ptt` 数字分页时有效；`searchnav` 快速分页
+    /// 页面应改用 [`SearchBuilder::offset`]（`prev`/`next`）。
+    /// 与 `offset` 同时设置时两者都会写入 URL，站点以 `page` 为准——
+    /// 不要混用。分页迭代见 [`SearchPager`](crate::client::pagination::SearchPager)。
+    #[must_use]
+    pub fn page(mut self, page: usize) -> Self {
+        self._page = page;
         self
     }
 
@@ -320,6 +335,15 @@ impl SearchBuilder {
         Ok(url)
     }
 
+    /// 追加数字分页参数 `page`（0 = 不发送，代表第一页）。
+    fn build_append_page(&self, mut url: Url) -> Url {
+        if self._page > 0 {
+            let mut query_pairs = url.query_pairs_mut();
+            query_pairs.append_pair("page", &self._page.to_string());
+        }
+        url
+    }
+
     /// 追加分类排除掩码 `f_cats`（0 = 不发送，代表全部显示）。
     fn build_append_category(&self, mut url: Url) -> Url {
         if self._category != 0 {
@@ -404,6 +428,7 @@ impl SearchBuilder {
     pub fn build(self) -> Result<Url, crate::error::Error> {
         let url = self.build_base_url()?;
         let url = self.build_append_offset(url);
+        let url = self.build_append_page(url);
         let url = self.build_append_category(url);
         let url = self.build_append_keywords(url);
         Ok(self.build_append_advanced_search(url))

@@ -306,6 +306,131 @@ impl GalleryTokensRequest {
     }
 }
 
+/// 通过 api.php `showpage` 方法取图片页数据的请求体。
+///
+/// 与 HTML 页面（`/s/…`）相比，`showpage` 一次返回图片地址与操作区数据，
+/// 且不消耗页面浏览计数；`imgkey` 即页面令牌 `pToken`。
+///
+/// # 示例
+///
+/// ```rust
+/// use libeh::dto::api::GalleryPageApiRequest;
+///
+/// let request = GalleryPageApiRequest::new(618395, 2, "0439fa3666", "530350-8".into());
+/// assert_eq!(request.method, "showpage");
+/// assert_eq!(request.page, 3); // 入参为 0 基页号，请求体使用 1 基页号
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GalleryPageApiRequest {
+    /// 请求方法，恒为 `"showpage"`。
+    pub method: String,
+    /// 画廊 ID。
+    pub gid: i64,
+    /// 页号（**1 基**；站点协议如此）。
+    pub page: i32,
+    /// 页面令牌（`pToken`）。
+    pub imgkey: String,
+    /// 翻页会话参数，来自 [`crate::dto::gallery::page::GalleryPage::show_key`]。
+    pub showkey: String,
+}
+
+impl GalleryPageApiRequest {
+    /// 构造 `showpage` 请求体。
+    ///
+    /// `page` 为 **0 基**页号（与 [`PageListItem`] 的页号语义一致），
+    /// 内部转换为协议要求的 1 基。
+    #[must_use]
+    pub fn new(gid: i64, page: i32, imgkey: &str, showkey: String) -> Self {
+        Self {
+            method: "showpage".into(),
+            gid,
+            page: page + 1,
+            imgkey: imgkey.into(),
+            showkey,
+        }
+    }
+}
+
+/// api.php `showpage` 的响应解析结果。
+///
+/// 响应为 `{"i3":"…","i5":"…","i6":"…","i7":…}` 形态，
+/// 每个字段是一段内嵌 HTML，从中提取地址与操作参数。
+/// 语义与 HTML 页面解析器 [`crate::dto::gallery::page::GalleryPage`] 一致。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GalleryPageApiResult {
+    /// 当前页图片地址。
+    pub image_url: String,
+    /// 换源参数（`nl('…')`；页面未提供时为 `None`）。
+    pub skip_hath_key: Option<String>,
+    /// 原图页链接（`fullimg.php?…`，需要原片权限）。
+    pub origin_image_url: Option<String>,
+    /// 原图直链（`prompt('Copy the URL below.', '…')` 给出）。
+    pub other_image_url: Option<String>,
+}
+
+/// 解析 api.php `showpage` 的原始响应文本。
+///
+/// # Errors
+///
+/// 响应含顶层 `error` 字段 → [`Error::Protocol`]；
+/// 缺少 `i3` 或其中没有图片地址 → [`Error::Parse`]。
+pub fn parse_gallery_page_response(body: &str) -> Result<GalleryPageApiResult, Error> {
+    use crate::error::snippet;
+
+    static IMAGE_URL: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<img[^>]*src="([^"]+)"[^>]*style"#).expect("constant regex")
+    });
+    static SKIP_HATH: LazyLock<regex::Regex> =
+        LazyLock::new(|| regex::Regex::new(r"return nl\('([^)]+)'\)").expect("constant regex"));
+    static ORIGIN_PROMPT: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"prompt\('Copy the URL below\.', '([^']+)'\)").expect("constant regex")
+    });
+    static ORIGIN_FULLIMG: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"<a href="([^"]*fullimg[^"]*)">"#).expect("constant regex")
+    });
+
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| Error::parse("showpage response", e.to_string(), snippet(body, 512)))?;
+    if let Some(err) = value.get("error").and_then(serde_json::Value::as_str) {
+        return Err(Error::Protocol(err.to_string()));
+    }
+    let i3 = value
+        .get("i3")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| Error::parse("showpage response", "missing i3", snippet(body, 512)))?;
+    let image_url = IMAGE_URL
+        .captures(i3)
+        .map(|c| crate::utils::unescape_xml(c[1].trim()))
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| Error::parse("showpage response", "no image in i3", snippet(i3, 512)))?;
+
+    let i6 = value
+        .get("i6")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    let i7 = value
+        .get("i7")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+
+    // 原图链接优先取 i7 的 fullimg.php（旧式协议），缺失时回退 i6 的 prompt 直链
+    let origin_from_i7 = ORIGIN_FULLIMG
+        .captures(i7)
+        .map(|c| crate::utils::unescape_xml(c[1].trim()));
+    let other = ORIGIN_PROMPT
+        .captures(i6)
+        .map(|c| crate::utils::unescape_xml(c[1].trim()));
+
+    Ok(GalleryPageApiResult {
+        image_url,
+        skip_hath_key: SKIP_HATH
+            .captures(i6)
+            .map(|c| crate::utils::unescape_xml(c[1].trim())),
+        origin_image_url: origin_from_i7,
+        other_image_url: other,
+    })
+}
+
 /// 画廊 ID 与令牌（`gtoken` 响应条目）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct TokenListItem {
@@ -359,6 +484,41 @@ mod tests {
         assert!(
             PageListItem::try_from("https://e-hentai.org/g/1/abcd123456/".to_string()).is_err()
         );
+    }
+
+    #[test]
+    fn test_parse_gallery_page_response() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/pending/GalleryPageApiParserTest.json"
+        );
+        let body = std::fs::read_to_string(path).unwrap();
+        let result = super::parse_gallery_page_response(&body).unwrap();
+        assert!(result.image_url.contains("/h/"), "{}", result.image_url);
+        // i7 的 fullimg 链接（HTML 实体已反转义）
+        assert!(
+            result
+                .origin_image_url
+                .as_deref()
+                .is_some_and(|u| u.contains("fullimg.php?gid=1366222") && !u.contains("&amp;")),
+            "{:?}",
+            result.origin_image_url
+        );
+        // i6 的 prompt 直链
+        assert!(
+            result
+                .other_image_url
+                .as_deref()
+                .is_some_and(|u| u.contains("/r/")),
+            "{:?}",
+            result.other_image_url
+        );
+    }
+
+    #[test]
+    fn test_gallery_page_response_error_field() {
+        let err = super::parse_gallery_page_response(r#"{"error":"Invalid page."}"#).unwrap_err();
+        assert!(matches!(err, crate::error::Error::Protocol(m) if m == "Invalid page."));
     }
 
     #[tokio::test]

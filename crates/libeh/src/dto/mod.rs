@@ -23,5 +23,9 @@ pub mod keyword;
 pub mod search_offset;
 /// 搜索结果及解析器
 pub mod search_result;
+/// 论坛登录响应的解析器
+pub mod signin;
 /// 站点类型枚举
 pub mod site;
+/// 画廊种子列表页的解析器
+pub mod torrent;

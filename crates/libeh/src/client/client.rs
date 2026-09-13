@@ -8,8 +8,14 @@
 //!   跳过表站的成人内容警告页；
 //! - **错误分类**：非 2xx → [`Error::Status`]；HTTP 200 但内容表示拒绝
 //!   （sad panda、kokomade 等）→ [`Error::Protocol`]；
-//! - **请求基线**：Chrome UA、10s 连接超时 / 30s 总超时、gzip 解压、
-//!   HTML 请求自动携带站点根 `Referer`。
+//! - **请求基线**：Chrome UA、10s 连接超时、gzip 解压、HTML 请求自动
+//!   携带站点根 `Referer`；**超时按操作分级**——页面 30s、api.php 15s
+//!   （连接超时为客户端级 10s），未来大文件下载可传更长的每请求超时。
+//! - **站点能力**：搜索（[`EhClient::search_parsed`]）、画廊元数据
+//!   （[`EhClient::gallery_metadata`]）、图片页
+//!   （[`EhClient::gallery_page`]）、种子列表（[`EhClient::torrents`]）、
+//!   收藏夹（[`EhClient::favorites`] 等三个方法）与账密登录
+//!   （[`EhClient::login`]）。
 //!
 //! # 示例
 //!
@@ -39,11 +45,13 @@ use reqwest::{cookie::Jar, Client, Proxy, Url};
 use serde::de::DeserializeOwned;
 
 use crate::dto::api::{
-    GalleryMetadata, GalleryMetadataError, GalleryMetadataRequest, GalleryTokenResponse,
-    GalleryTokensRequest, GidListItem, PageListItem, TokenListItem, API_URL_EH, API_URL_EX,
-    GDATA_MAX_ITEMS,
+    parse_gallery_page_response, GalleryMetadata, GalleryMetadataError, GalleryMetadataRequest,
+    GalleryPageApiRequest, GalleryPageApiResult, GalleryTokenResponse, GalleryTokensRequest,
+    GidListItem, PageListItem, TokenListItem, API_URL_EH, API_URL_EX, GDATA_MAX_ITEMS,
 };
+use crate::dto::favorites::{FavoriteCategories, FavoritesPage};
 use crate::dto::search_result::SearchResult;
+use crate::dto::torrent::TorrentEntry;
 use crate::dto::{keyword::Keyword, search_offset::Offset, site::Site};
 use crate::error::{snippet, Error};
 use crate::url::search::SearchBuilder;
@@ -62,6 +70,16 @@ const CONTENT_WARNING_COOKIE: (&str, &str) = ("nw", "1");
 const AUTH_DOMAINS: [&str; 2] = ["e-hentai.org", "exhentai.org"];
 /// 客户端支持的代理协议（`socks5` 依赖 reqwest 的 `socks` feature）。
 const SUPPORTED_PROXY_PROTOCOLS: [&str; 3] = ["http", "https", "socks5"];
+/// 页面请求（列表/详情/图片页）的超时。
+const TIMEOUT_PAGE: Duration = Duration::from_secs(30);
+/// api.php JSON 请求的超时。
+const TIMEOUT_API: Duration = Duration::from_secs(15);
+/// 论坛账密登录地址（IPB 表单）。
+const LOGIN_URL: &str = "https://forums.e-hentai.org/index.php?act=Login&CODE=01";
+/// 登录表单的 `Referer`（登录页本身）。
+const LOGIN_REFERER: &str = "https://forums.e-hentai.org/index.php?act=Login&CODE=00";
+/// 登录表单的 `Origin`。
+const LOGIN_ORIGIN: &str = "https://forums.e-hentai.org";
 
 /// E-Hentai/ExHentai HTTP 客户端。
 ///
@@ -71,6 +89,9 @@ const SUPPORTED_PROXY_PROTOCOLS: [&str; 3] = ["http", "https", "socks5"];
 pub struct EhClient {
     site: Site,
     client: Client,
+    /// CookieJar 的本体检索句柄：`cookie_provider` 持有同一份 Arc，
+    /// [`EhClient::login`] 成功后经由它把论坛 Cookie 补写到两个站点域。
+    jar: std::sync::Arc<Jar>,
 }
 
 impl EhClient {
@@ -88,7 +109,6 @@ impl EhClient {
         let mut builder = Client::builder()
             .redirect(redirect::Policy::limited(20))
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
             .user_agent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                  (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0",
@@ -108,7 +128,7 @@ impl EhClient {
             builder = builder.proxy(proxy);
         }
 
-        let jar = Jar::default();
+        let jar = std::sync::Arc::new(Jar::default());
         // reqwest 的 CookieJar 以 Set-Cookie 字符串形态接收条目，
         // 借助 cookie crate 构造带域/路径属性的标准字符串；
         // 认证 Cookie 与 nw=1 同时写入两个站点域（与 EhViewer 行为一致）
@@ -139,13 +159,14 @@ impl EhClient {
             let url = Site::from_domain(domain).url()?;
             jar.add_cookie_str(&raw, &url);
         }
-        builder = builder.cookie_provider(jar.into());
+        builder = builder.cookie_provider(jar.clone());
 
         let client = builder.build().map_err(Error::Http)?;
 
         Ok(EhClient {
             client,
             site: config.site,
+            jar,
         })
     }
 
@@ -213,7 +234,7 @@ impl EhClient {
     /// - 非 2xx → [`Error::Status`]；
     /// - HTTP 200 但站点拒绝 → [`Error::Protocol`]。
     pub async fn get_html(&self, url: Url) -> Result<String, Error> {
-        let request = self.client.get(url.clone()).header(
+        let request = self.client.get(url.clone()).timeout(TIMEOUT_PAGE).header(
             REFERER,
             format!("https://{}/", url.host_str().unwrap_or_default()),
         );
@@ -254,6 +275,7 @@ impl EhClient {
         let response = self
             .client
             .get(url.clone())
+            .timeout(TIMEOUT_API)
             .send()
             .await
             .map_err(Error::Http)?;
@@ -281,6 +303,7 @@ impl EhClient {
         let response = self
             .client
             .post(url.clone())
+            .timeout(TIMEOUT_API)
             .json(body)
             .send()
             .await
@@ -325,6 +348,7 @@ impl EhClient {
             let raw = self
                 .client
                 .post(self.api_url())
+                .timeout(TIMEOUT_API)
                 .json(&body)
                 .send()
                 .await
@@ -392,6 +416,266 @@ pub enum GidDataResult {
     Metadata(Box<GalleryMetadata>),
     /// 该条目查询失败（`error` 字段原文）。
     Error(GalleryMetadataError),
+}
+
+impl EhClient {
+    /// 通过 api.php 的 `showpage` 方法取单张图片页数据。
+    ///
+    /// 与抓取 HTML 图片页（[`GalleryPage::parse`](crate::dto::gallery::page::GalleryPage::parse)）
+    /// 相比，API 方式不消耗浏览计数且能一并拿到原图链接；
+    /// `showkey` 来自 HTML 页面（[`GalleryPage::show_key`](crate::dto::gallery::page::GalleryPage::show_key)）。
+    ///
+    /// # Errors
+    ///
+    /// 网络/状态码失败 → 相应 [`Error`]；站点拒绝（`error` 字段、
+    /// sad panda 等）→ [`Error::Protocol`]；响应结构异常 → [`Error::Parse`]。
+    pub async fn gallery_page(
+        &self,
+        gid: i64,
+        page: i32,
+        imgkey: &str,
+        showkey: String,
+    ) -> Result<GalleryPageApiResult, Error> {
+        let body = GalleryPageApiRequest::new(gid, page, imgkey, showkey);
+        let raw = self
+            .client
+            .post(self.api_url())
+            .timeout(TIMEOUT_API)
+            .json(&body)
+            .send()
+            .await
+            .map_err(Error::Http)?;
+        let status = raw.status();
+        if !status.is_success() {
+            return Err(Error::status(status.as_u16(), self.api_url().to_string()));
+        }
+        let text = raw.text().await.map_err(Error::Http)?;
+        parse_gallery_page_response(&text)
+    }
+
+    /// 抓取并解析画廊种子列表。
+    ///
+    /// `torrent_url` 来自 [`GalleryDetail::torrent_url`](crate::dto::gallery::detail::GalleryDetail::torrent_url)
+    /// （`gallerytorrents.php` 弹窗地址，绝对/相对路径均可；相对路径按
+    /// 当前站点根补全）。
+    ///
+    /// # Errors
+    ///
+    /// 网络/状态码/协议嗅探失败 → 相应 [`Error`]；页面解析失败 → [`Error::Parse`]。
+    pub async fn torrents(&self, torrent_url: &str) -> Result<Vec<TorrentEntry>, Error> {
+        let url = if torrent_url.starts_with("http") {
+            Url::parse(torrent_url).map_err(|e| Error::Config(format!("bad torrent url: {e}")))?
+        } else {
+            let mut base = self.site.url()?;
+            base.set_path(torrent_url.trim_start_matches('/'));
+            base
+        };
+        let html = self.get_html(url).await?;
+        TorrentEntry::parse_page(&html)
+    }
+
+    /// 账密登录论坛（IPB），成功后自动把会话 Cookie 补写到两个站点域。
+    ///
+    /// 站点登录态完全由 Cookie 承载：本方法向论坛提交表单
+    /// （`UserName`/`PassWord`/`CookieDate=1`/`temporary_https=off`），
+    /// 成功后把响应的 `Set-Cookie`（`ipb_member_id`、`ipb_pass_hash` 等）
+    /// 同时写入 e-hentai.org 与 exhentai.org 域，客户端即刻具备认证身份。
+    ///
+    /// 注意：站点在风控时可能要求验证码或人机校验，此时返回
+    /// [`Error::Protocol`]，请改用浏览器登录后手工导入 Cookie。
+    ///
+    /// # Errors
+    ///
+    /// - IPB 错误框（密码错误、需要验证码等）→ [`Error::Protocol`]；
+    /// - 响应既无欢迎语也无错误框（Cloudflare 拦截页）→ [`Error::Parse`]；
+    /// - 网络/状态码失败 → 相应 [`Error`]。
+    pub async fn login(&self, username: &str, password: &str) -> Result<String, Error> {
+        let url = Url::parse(LOGIN_URL).expect("constant url");
+        let response = self
+            .client
+            .post(url.clone())
+            .timeout(TIMEOUT_PAGE)
+            .header(REFERER, LOGIN_REFERER)
+            .header(reqwest::header::ORIGIN, LOGIN_ORIGIN)
+            .form(&[
+                ("UserName", username),
+                ("PassWord", password),
+                ("submit", "Log me in"),
+                ("CookieDate", "1"),
+                ("temporary_https", "off"),
+            ])
+            .send()
+            .await
+            .map_err(Error::Http)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(Error::status(status.as_u16(), url.to_string()));
+        }
+
+        // 论坛只对论坛域下发会话 Cookie；要同时具备主站/里站身份，
+        // 必须把 Set-Cookie 复制写入两个站点域（EhViewer 双域复制行为）
+        let set_cookies: Vec<String> = response
+            .headers()
+            .get_all(reqwest::header::SET_COOKIE)
+            .iter()
+            .filter_map(|v| v.to_str().ok())
+            .map(std::string::ToString::to_string)
+            .collect();
+        let body = response.text().await.map_err(Error::Http)?;
+        let display_name = crate::dto::signin::parse_sign_in(&body)?;
+        for raw in &set_cookies {
+            for domain in AUTH_DOMAINS {
+                let target = Site::from_domain(domain).url()?;
+                self.jar.add_cookie_str(raw, &target);
+            }
+        }
+        Ok(display_name)
+    }
+
+    /// 抓取收藏夹页面（槽位统计 + 画廊列表）。
+    ///
+    /// `favcat` 为收藏夹编号（0–9）；`None` 表示默认收藏夹。
+    /// 需要认证 Cookie，未登录时返回 [`Error::Protocol`]。
+    ///
+    /// # Errors
+    ///
+    /// 未登录 → [`Error::Protocol`]；网络/状态码/解析失败 → 相应 [`Error`]。
+    pub async fn favorites(&self, favcat: Option<u8>) -> Result<FavoritesPage, Error> {
+        let mut url = self.site.url()?;
+        url.set_path("favorites.php");
+        if let Some(fc) = favcat {
+            url.query_pairs_mut().append_pair("favcat", &fc.to_string());
+        }
+        let html = self.get_html(url).await?;
+        // 同一页面解析两次（DOM 级槽位 + 字符串级列表）；页面约 100KB，可接受
+        let d = scraper::Html::parse_document(&html);
+        let categories = FavoriteCategories::parse(&d)?;
+        let result = SearchResult::parse(html)?;
+        Ok(FavoritesPage { categories, result })
+    }
+
+    /// 把一个画廊加入收藏（或从收藏中删除）。
+    ///
+    /// - `favcat`：`0..=9` 为目标收藏夹编号；`-1` 表示删除收藏；
+    /// - `note`：收藏备注（站点限制 250 字符）。
+    ///
+    /// 需要认证 Cookie。
+    ///
+    /// # Errors
+    ///
+    /// 未登录 → [`Error::Protocol`]；`favcat` 越界 → [`Error::Config`]；
+    /// 网络/状态码/协议嗅探失败 → 相应 [`Error`]。
+    pub async fn add_favorite(
+        &self,
+        gid: i64,
+        token: &str,
+        favcat: i8,
+        note: &str,
+    ) -> Result<(), Error> {
+        let cat = match favcat {
+            -1 => "favdel".to_string(),
+            c if (0..=9).contains(&c) => c.to_string(),
+            other => {
+                return Err(Error::Config(format!(
+                    "invalid favcat {other}; expected -1 (delete) or 0..=9"
+                )))
+            }
+        };
+        let mut url = self.site.url()?;
+        url.set_path("gallerypopups.php");
+        url.query_pairs_mut()
+            .append_pair("gid", &gid.to_string())
+            .append_pair("t", token)
+            .append_pair("act", "addfav");
+        self.post_form(
+            url,
+            &[
+                ("favcat", cat),
+                ("favnote", note.to_string()),
+                ("submit", "Apply Changes".to_string()),
+                ("update", "1".to_string()),
+            ],
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// 批量移动/删除收藏（收藏夹页面勾选后 Apply 的表单等价物）。
+    ///
+    /// - `gids`：要操作的画廊 ID 列表；
+    /// - `dst_cat`：`0..=9` 为目标收藏夹编号；`-1` 表示删除收藏。
+    ///
+    /// 需要认证 Cookie。
+    ///
+    /// # Errors
+    ///
+    /// 未登录 → [`Error::Protocol`]；`dst_cat` 越界 → [`Error::Config`]；
+    /// `gids` 为空 → [`Error::Config`]；网络/状态码失败 → 相应 [`Error`]。
+    pub async fn modify_favorites(&self, gids: &[i64], dst_cat: i8) -> Result<(), Error> {
+        if gids.is_empty() {
+            return Err(Error::Config("gids is empty".into()));
+        }
+        let ddact = match dst_cat {
+            -1 => "delete".to_string(),
+            c if (0..=9).contains(&c) => format!("fav{c}"),
+            other => {
+                return Err(Error::Config(format!(
+                    "invalid dst_cat {other}; expected -1 (delete) or 0..=9"
+                )))
+            }
+        };
+        let mut url = self.site.url()?;
+        url.set_path("favorites.php");
+        let mut form: Vec<(String, String)> = vec![
+            ("ddact".to_string(), ddact),
+            ("apply".to_string(), "Apply".to_string()),
+        ];
+        for gid in gids {
+            form.push(("modifygids[]".to_string(), gid.to_string()));
+        }
+        let form_refs: Vec<(&str, String)> =
+            form.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        self.post_form(url, &form_refs).await?;
+        Ok(())
+    }
+
+    /// POST 一个 urlencoded 表单并返回响应文本（带状态码检查与协议嗅探）。
+    ///
+    /// 收藏夹等表单操作的公共底座；`Referer`/`Origin` 设为站点根。
+    async fn post_form(&self, url: Url, form: &[(&str, String)]) -> Result<String, Error> {
+        let origin = format!("https://{}/", url.host_str().unwrap_or_default());
+        let response = self
+            .client
+            .post(url.clone())
+            .timeout(TIMEOUT_PAGE)
+            .header(REFERER, origin.clone())
+            .header(reqwest::header::ORIGIN, origin)
+            .form(form)
+            .send()
+            .await
+            .map_err(Error::Http)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(Error::status(status.as_u16(), url.to_string()));
+        }
+        let disposition = response
+            .headers()
+            .get(CONTENT_DISPOSITION)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let text = response.text().await.map_err(Error::Http)?;
+        if disposition.contains(SAD_PANDA_DISPOSITION) {
+            return Err(Error::Protocol("sad panda".into()));
+        }
+        if text.contains(KOKOMADE_MARK) {
+            return Err(Error::Protocol("kokomade".into()));
+        }
+        if crate::utils::regex::contains_phrase(&text, "This page requires you to log on.") {
+            return Err(Error::Protocol("This page requires you to log on.".into()));
+        }
+        Ok(text)
+    }
 }
 
 #[cfg(test)]

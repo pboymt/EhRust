@@ -55,6 +55,9 @@ enum Command {
         /// 搜索关键词（可多次，支持 `female:xxx` 标签语法）。
         #[arg(short = 'k', long = "keyword")]
         keywords: Vec<String>,
+        /// 连续抓取的页数（默认 1 页；使用分页迭代器逐页请求）。
+        #[arg(long)]
+        pages: Option<usize>,
         /// 打印原始搜索 URL 而不发请求（离线调试）。
         #[arg(long)]
         dry_run: bool,
@@ -88,21 +91,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     match cli.command {
-        Command::Search { keywords, dry_run } => run_search(config, keywords, dry_run).await?,
+        Command::Search {
+            keywords,
+            pages,
+            dry_run,
+        } => run_search(config, keywords, pages, dry_run).await?,
         Command::Gallery { url } => run_gallery(config, url).await?,
     }
     Ok(())
 }
 
 /// 执行搜索子命令。
+///
+/// `pages > 1` 时使用分页迭代器连续抓取多页（仅支持数字分页的页面）。
 async fn run_search(
     config: EhClientConfig,
     keywords: Vec<String>,
+    pages: Option<usize>,
     dry_run: bool,
 ) -> Result<(), Error> {
     let keywords: Vec<Keyword> = keywords.into_iter().map(Keyword::from).collect();
-    let mut builder = libeh::url::search::SearchBuilder::new(config.site);
-    builder = builder.add_keywords(keywords.clone());
+    let builder = libeh::url::search::SearchBuilder::new(config.site).add_keywords(keywords);
 
     if dry_run {
         println!("{}", builder.build()?);
@@ -111,15 +120,22 @@ async fn run_search(
 
     println!("Config: {config:?}");
     let client = EhClient::try_new(config)?;
-    let url = builder.build()?;
-    let html = client.get_html(url).await?;
-    let result = libeh::dto::search_result::SearchResult::parse(html)?;
-    println!(
-        "pages={} next_page={} count={:?} skipped={}",
-        result.pages, result.next_page, result.result_count, result.skipped_rows
-    );
-    for gallery_info in result.gallery_info_list {
-        println!("{gallery_info:?}");
+    let max_pages = pages.unwrap_or(1).max(1);
+    let mut pager = libeh::client::pagination::SearchPager::new(client, builder);
+    let mut fetched = 0usize;
+    while fetched < max_pages {
+        let Some(result) = pager.next().await else {
+            break;
+        };
+        let result = result?;
+        fetched += 1;
+        println!(
+            "== page {}: pages={} next_page={} count={:?} skipped={}",
+            fetched, result.pages, result.next_page, result.result_count, result.skipped_rows
+        );
+        for gallery_info in result.gallery_info_list {
+            println!("{gallery_info:?}");
+        }
     }
     Ok(())
 }
