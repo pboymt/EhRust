@@ -14,25 +14,36 @@ This library encapsulates functions that request API and page content from EH to
 
 ### Library / 库 [libeh](crates/libeh/README.md)
 
-- [ ] Client / 客户端
+- [x] Client / 客户端
   - [x] Authentication / 认证
     - [x] Serialization and Deserialization / 序列化与反序列化
     - [x] Environment Variables / 环境变量读取
-  - [ ] HTTP Client / HTTP 客户端
-  - [ ] Configuration / 客户端配置
+  - [x] HTTP Client / HTTP 客户端（`EhClient::try_new`：超时、gzip、状态码检查、协议错误识别）
+  - [x] Configuration / 客户端配置
     - [x] Environment Variables / 环境变量读取
-    - [ ] Serialization and Deserialization / 序列化与反序列化
+    - [x] Serialization and Deserialization / 序列化与反序列化
       - [x] JSON Format / 格式
       - [x] YAML Format / 格式
       - [ ] TOML Format / 格式
-  - [x] Proxy / 代理配置
-    - [x] Serialization and Deserialization / 序列化与反序列化
-    - [x] Environment Variables / 环境变量读取
-- [ ] Data Transfer Object / 数据传输对象
-- [ ] Tag Manager / 标签管理器
-- [ ] URL Builder / URL 生成器
-- [ ] Utils / 工具
+  - [x] Proxy / 代理配置（HTTP/HTTPS/SOCKS5）
+  - [x] Error / 统一错误类型（thiserror）
+- [x] Data Transfer Object / 数据传输对象（搜索结果/画廊详情/评论/预览/收藏夹/api.php）
+  - [ ] Image Page / 图片页解析（`/s/…` 的图片 URL 与 showkey，待实现）
+- [x] Tag Manager / 标签管理器（EhTagTranslation 数据结构）
+- [x] URL Builder / URL 生成器（搜索 + 画廊，含严格/宽松双模式解析）
+- [x] Utils / 工具（正则、scraper 辅助、serde 反序列化器）
 
 ### Command Line Tool / 命令行工具 [ehrust](crates/ehrust/README.md)
 
-Work in progress.
+- [x] search 子命令（含 `--dry-run` 离线调试）
+- [x] gallery 子命令（详情页摘要）
+- [x] 配置合并：环境变量 → YAML → 命令行参数
+- [ ] gallerytorrents / archiver 子命令（待实现）
+
+### Quality Gates / 质量门禁
+
+- [x] `cargo fmt --check`
+- [x] `cargo clippy -D warnings`
+- [x] `cargo test`（离线夹具测试；网络测试 `#[ignore]` + `EH_NETWORK_TESTS=1`）
+- [x] `cargo doc -D warnings`（rustdoc 告警视为错误）
+- [x] CI（GitHub Actions / Gitea Actions 双份配置）

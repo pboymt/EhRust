@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      # 三件套：格式、静态检查、测试（离线，网络测试默认 #[ignore]）
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests (offline)
+        run: cargo test --workspace
+
+      # rustdoc 门禁：文档告警视为错误
+      - name: Rustdoc (deny warnings)
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --no-deps
+
+  nightly-network-smoke:
+    # 真实网络冒烟测试：需要站点可达或代理，失败不阻塞主 CI
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Network smoke tests
+        env:
+          EH_NETWORK_TESTS: "1"
+          EH_PROXY: ${{ secrets.EH_PROXY }}
+        run: cargo test --workspace -- --ignored
