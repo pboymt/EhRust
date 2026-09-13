@@ -1,1 +1,1 @@
-paths = ["./crates/libeh"]
+# libeh 与 ehrust 已是 workspace 成员，无需 paths 覆盖

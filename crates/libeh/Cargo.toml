@@ -16,15 +16,15 @@ keywords = ["e-hentai", "exhentai", "ehrust", "libeh"]
 tokio.workspace = true
 dotenvy.workspace = true
 log.workspace = true
-env_logger.workspace = true
-reqwest = { version = "0.11", features = ["json", "cookies"] }
+thiserror.workspace = true
+reqwest = { version = "0.12", features = ["json", "cookies", "socks", "gzip"] }
 serde.workspace = true
+serde_json = "1"
 scraper = { version = "0.18" }
+selectors = "0.25"
 cookie = { version = "0.18" }
 regex = { version = "1.10.3" }
 chrono = { version = "0.4.34", features = ["serde"] }
-
-# sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite"] }
 
 [dev-dependencies]
 serde_json = { version = "1.0" }
