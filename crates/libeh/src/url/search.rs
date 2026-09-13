@@ -1,295 +1,417 @@
+//! 搜索 URL 构建器：把搜索条件组装为 e-hentai/exhentai 的列表页 URL。
+//!
+//! 站点搜索的全部参数都挂在列表页的 query string 上，
+//! [`SearchBuilder`] 以 builder 模式逐项设置，最终 `build()` 产出 [`Url`]：
+//!
+//! ```text
+//! https://e-hentai.org/watched?f_cats=2&f_search=...&next=1234&advsearch=1&f_sr=on&f_srdd=4
+//! └─────────┬─────────┘└┬───┘└───┬────┘└───┬──┘└────┬───┘└────────┬────────┘
+//!          站点/订阅    排除分类  关键词    偏移量   高级开关      最低评分
+//! ```
+//!
+//! # 分类过滤（`f_cats`）
+//!
+//! 站点的 `f_cats` 参数是一个**排除掩码**：置位的分类**不会**出现在结果里，
+//! 不发送该参数 = 显示全部分类。[`SearchBuilder`] 内部维护的就是这个排除掩码，
+//! 对应的语义化 API 是 [`SearchBuilder::disable_category`] /
+//! [`SearchBuilder::enable_category`]。
+//!
+//! # 高级搜索（`advsearch=1`）
+//!
+//! 高级开关（已删除、含种子、页数范围、最低评分、禁用过滤器）必须与
+//! `advsearch=1` 同时出现才生效，因此调用任一高级项前需要先
+//! [`SearchBuilder::enable_advanced_search`]。
+//!
+//! # 示例
+//!
+//! ```rust
+//! use libeh::dto::gallery::category::Category;
+//! use libeh::dto::keyword::Keyword;
+//! use libeh::url::search::SearchBuilder;
+//!
+//! let url = SearchBuilder::new(libeh::dto::site::Site::Eh)
+//!     .add_keyword(Keyword::Artist("simon".into()))
+//!     .add_keyword(Keyword::Language("chinese".into()))
+//!     .disable_category(Category::Misc)
+//!     .enable_advanced_search()
+//!     .rating(4)
+//!     .build()
+//!     .unwrap();
+//!
+//! let query = url.query().unwrap();
+//! assert!(query.contains("f_search="));
+//! assert!(query.contains("f_cats=1"));           // 排除 Misc（位 0x1）
+//! assert!(query.contains("advsearch=1"));
+//! assert!(query.contains("f_sr=on&f_srdd=4"));   // 最低评分需要 f_sr=on 才生效
+//! ```
+
 use crate::dto::{
     gallery::category::Category, keyword::Keyword, search_offset::Offset, site::Site,
 };
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
-use std::vec;
 
-#[derive(Debug, Clone)]
-pub struct PageRange(Option<i64>, Option<i64>);
+/// 高级搜索中的画廊页数范围。
+///
+/// `None` 表示该侧不设界；两侧都为 `None` 时不产生任何 query 参数。
+/// 需要配合 [`SearchBuilder::enable_advanced_search`] 使用。
+///
+/// # 示例
+///
+/// ```rust
+/// use libeh::url::search::PageRange;
+///
+/// let range = PageRange::new(Some(1), Some(10)); // 1–10 页
+/// assert_eq!(range.start, Some(1));
+/// assert_eq!(range.end, Some(10));
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PageRange {
+    /// 起始页数（含），`None` 表示不设下界。
+    pub start: Option<i64>,
+    /// 结束页数（含），`None` 表示不设上界。
+    pub end: Option<i64>,
+}
 
-#[derive(Debug, Clone)]
+impl PageRange {
+    /// 构造一个页数范围；`None` 表示对应侧不设界。
+    #[must_use]
+    pub fn new(start: Option<i64>, end: Option<i64>) -> Self {
+        PageRange { start, end }
+    }
+}
+
+/// 高级搜索选项集合。
+///
+/// 除 [`AdvancedSearch::enabled`] 外的每个字段对应一个 `f_*` query 参数，
+/// 只有在 [`SearchBuilder::enable_advanced_search`] 启用后才会写入 URL。
+///
+/// 参考站点高级搜索面板：
+/// `f_sh`（已删除）、`f_sto`（含种子）、`f_sp`/`f_spf`/`f_spt`（页数范围）、
+/// `f_sr`/`f_srdd`（最低评分）、`f_sfl`/`f_sfu`/`f_sft`（禁用对应过滤器）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AdvancedSearch {
+    /// 是否在 URL 中写入 `advsearch=1` 并启用以下选项。
     pub enabled: bool,
+    /// 仅显示已被删除（expunged）的画廊 → `f_sh=on`。
     pub expunged: bool,
+    /// 仅显示包含种子的画廊 → `f_sto=on`。
     pub require_torrent: bool,
+    /// 画廊页数范围 → `f_sp=on` + `f_spf`/`f_spt`。
     pub between_pages: PageRange,
+    /// 最低评分（半星单位，2..=5）→ `f_sr=on` + `f_srdd`。
     pub rating: i8,
+    /// 禁用语言过滤器 → `f_sfl=on`。
     pub disable_filters_for_language: bool,
+    /// 禁用上传者过滤器 → `f_sfu=on`。
     pub disable_filters_for_uploader: bool,
+    /// 禁用标签过滤器 → `f_sft=on`。
     pub disable_filters_for_tags: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchOptions {
-    keywords: Vec<String>,
-}
-
+/// 搜索 URL 构建器。
+///
+/// 通过链式调用设置搜索条件，最终 [`SearchBuilder::build`] 产出完整 URL。
+/// 未设置的项不产生 query 参数（与站点"不发送 = 默认值"的行为一致）。
+///
+/// 各参数的站点语义见[模块文档](self)。
 #[derive(Debug, Clone)]
 pub struct SearchBuilder {
     _site: Site,
     _watched: bool,
     _offset: Option<Offset>,
+    /// 分类排除掩码（置位 = 排除），即站点 `f_cats` 参数的原值。
     _category: u16,
     _keywords: Vec<Keyword>,
     _advsearch: AdvancedSearch,
 }
 
 impl SearchBuilder {
+    /// 以指定站点创建一个全默认的构建器。
+    ///
+    /// 默认不排除任何分类、不带关键词、不带偏移量。
+    #[must_use]
     pub fn new(site: Site) -> Self {
-        // 创建一个新的实例并设置_site为site参数
-        // 设置_offset为None
-        // 设置_category为0
-        // 设置_keywords为一个空的向量
-        // 创建一个AdvancedSearch实例并设置enabled为false
-        // 设置expunged为false
-        // 设置require_torrent为false
-        // 设置between_pages为PageRange(None, None)
-        // 设置rating为0
-        // 设置disable_filters_for_language为false
-        // 设置disable_filters_for_uploader为false
-        // 设置disable_filters_for_tags为false
         Self {
             _site: site,
             _watched: false,
             _offset: None,
             _category: 0,
-            _keywords: vec![],
-
-            _advsearch: AdvancedSearch {
-                enabled: false,
-                expunged: false,
-                require_torrent: false,
-                between_pages: PageRange(None, None),
-                rating: 0,
-                disable_filters_for_language: false,
-                disable_filters_for_uploader: false,
-                disable_filters_for_tags: false,
-            },
+            _keywords: Vec::new(),
+            _advsearch: AdvancedSearch::default(),
         }
     }
 
-    /// 设置只搜索订阅的作品
-    pub fn watched(mut self) -> SearchBuilder {
+    /// 只搜索订阅（watched）的作品，URL 路径改为 `/watched`。
+    ///
+    /// 该页面需要登录 Cookie，否则站点返回要求登录的页面。
+    #[must_use]
+    pub fn watched(mut self) -> Self {
         self._watched = true;
         self
     }
 
-    /// 设置不只搜索订阅的作品
-    pub fn unwatched(mut self) -> SearchBuilder {
+    /// 搜索全部作品（取消 [`SearchBuilder::watched`]），URL 路径恢复为 `/`。
+    #[must_use]
+    pub fn unwatched(mut self) -> Self {
         self._watched = false;
         self
     }
 
-    /// 设置搜索的偏移量
-    pub fn offset(mut self, offset: Offset) -> SearchBuilder {
+    /// 设置搜索结果的偏移量（`prev`/`next`/`range`/`jump` 参数）。
+    #[must_use]
+    pub fn offset(mut self, offset: Offset) -> Self {
         self._offset = Some(offset);
         self
     }
 
-    /// 清空搜索的偏移量
-    pub fn clear_offset(mut self) -> SearchBuilder {
+    /// 清空偏移量。
+    #[must_use]
+    pub fn clear_offset(mut self) -> Self {
         self._offset = None;
         self
     }
 
-    /// 启用/禁用类别
-    pub fn toggle_category(mut self, category: Category) -> SearchBuilder {
-        // 判断当前类别是否已禁用
-        let disabled = (self._category & u16::from(category)) == u16::from(category);
-        // 如果已禁用，则去除该类别的标志位
-        if disabled {
-            self._category = self._category & (1023 ^ u16::from(category));
+    /// 把分类置入排除掩码（该分类不再出现在结果中）。
+    ///
+    /// # 参数语义
+    ///
+    /// 仅"真实分类位"（[`Category::Misc`]..[`Category::Western`]）有效；
+    /// [`Category::All`] / [`Category::Private`] / [`Category::Unknown`]
+    /// 不是有效的 `f_cats` 位，调用它们等效于无操作。
+    ///
+    /// ```rust
+    /// use libeh::dto::gallery::category::Category;
+    /// use libeh::url::search::SearchBuilder;
+    ///
+    /// // 排除 Misc：站点语义为 f_cats=1
+    /// let url = SearchBuilder::new(libeh::dto::site::Site::Eh)
+    ///     .disable_category(Category::Misc)
+    ///     .build().unwrap();
+    /// assert_eq!(url.query().unwrap(), "f_cats=1");
+    /// ```
+    #[must_use]
+    pub fn disable_category(mut self, category: Category) -> Self {
+        self._category |= u16::from(category);
+        self
+    }
+
+    /// 把分类移出排除掩码（恢复显示该分类）。
+    #[must_use]
+    pub fn enable_category(mut self, category: Category) -> Self {
+        self._category &= !u16::from(category);
+        self
+    }
+
+    /// 排除全部分类（`f_cats=1023`，结果为空，通常用于随后只放开少数分类）。
+    #[must_use]
+    pub fn disable_all_categories(mut self) -> Self {
+        self._category = 1023;
+        self
+    }
+
+    /// 清空排除掩码，显示全部分类。
+    #[must_use]
+    pub fn enable_all_categories(mut self) -> Self {
+        self._category = 0;
+        self
+    }
+
+    /// 切换分类的排除状态：已排除则恢复，未排除则排除。
+    #[must_use]
+    pub fn toggle_category(mut self, category: Category) -> Self {
+        if (self._category & u16::from(category)) == u16::from(category) {
+            self._category &= !u16::from(category);
         } else {
-            // 如果未禁用，则设置该类别的标志位
             self._category |= u16::from(category);
         }
         self
     }
 
-    /// 禁用所有类别
-    pub fn mask_all_categories(mut self) -> SearchBuilder {
-        self._category = 1023;
-        self
-    }
-
-    /// 添加关键词
-    pub fn add_keyword(mut self, keyword: Keyword) -> SearchBuilder {
-        self._keywords.push(keyword);
-        self
-    }
-
-    /// 批量添加关键词
-    pub fn add_keywords(mut self, keywords: Vec<Keyword>) -> SearchBuilder {
-        self._keywords.extend(keywords);
-        self
-    }
-
-    /// 启用高级搜索
-    pub fn enable_advanced_search(mut self) -> SearchBuilder {
+    /// 启用高级搜索（在 URL 写入 `advsearch=1`）。
+    ///
+    /// 页数范围、最低评分等高级项必须在此之后才会写入 URL。
+    #[must_use]
+    pub fn enable_advanced_search(mut self) -> Self {
         self._advsearch.enabled = true;
         self
     }
 
-    /// 仅浏览已删除的画廊
-    pub fn browse_expunged_galleries(mut self) -> SearchBuilder {
+    /// 高级搜索：仅显示已被删除（expunged）的画廊 → `f_sh=on`。
+    #[must_use]
+    pub fn browse_expunged_galleries(mut self) -> Self {
         self._advsearch.expunged = true;
         self
     }
 
-    /// 只搜索包含种子的画廊
-    pub fn require_gallery_torrent(mut self) -> SearchBuilder {
+    /// 高级搜索：仅显示包含种子的画廊 → `f_sto=on`。
+    #[must_use]
+    pub fn require_gallery_torrent(mut self) -> Self {
         self._advsearch.require_torrent = true;
         self
     }
 
-    /// 设置画廊包含的页数范围
-    pub fn between_pages(mut self, page_range: PageRange) -> SearchBuilder {
+    /// 高级搜索：设置画廊页数范围 → `f_sp=on` + `f_spf`/`f_spt`。
+    #[must_use]
+    pub fn between_pages(mut self, page_range: PageRange) -> Self {
         self._advsearch.between_pages = page_range;
         self
     }
 
-    /// 设置画廊的最低评分
-    pub fn rating(mut self, rating: i8) -> SearchBuilder {
-        if rating >= 0 && rating <= 5 {
+    /// 高级搜索：设置最低评分。
+    ///
+    /// 参数取站点 `f_srdd` 的原始值（半星单位）：`2`=1 星、`3`=1.5 星、
+    /// `4`=2 星、`5`=2.5 星；超出 `2..=5` 的取值被忽略（保持原值）。
+    /// 写入 URL 时同时携带 `f_sr=on`，缺少它站点会忽略评分筛选。
+    #[must_use]
+    pub fn rating(mut self, rating: i8) -> Self {
+        if (2..=5).contains(&rating) {
             self._advsearch.rating = rating;
         }
         self
     }
 
-    /// 禁用语言过滤器
-    pub fn disable_filters_for_language(mut self) -> SearchBuilder {
+    /// 高级搜索：禁用语言过滤器 → `f_sfl=on`。
+    #[must_use]
+    pub fn disable_filters_for_language(mut self) -> Self {
         self._advsearch.disable_filters_for_language = true;
         self
     }
 
-    /// 禁用上传者过滤器
-    pub fn disable_filters_for_uploader(mut self) -> SearchBuilder {
+    /// 高级搜索：禁用上传者过滤器 → `f_sfu=on`。
+    #[must_use]
+    pub fn disable_filters_for_uploader(mut self) -> Self {
         self._advsearch.disable_filters_for_uploader = true;
         self
     }
 
-    /// 禁用标签过滤器
-    pub fn disable_filters_for_tags(mut self) -> SearchBuilder {
+    /// 高级搜索：禁用标签过滤器 → `f_sft=on`。
+    #[must_use]
+    pub fn disable_filters_for_tags(mut self) -> Self {
         self._advsearch.disable_filters_for_tags = true;
         self
     }
 
-    /// 获取当前类别
+    /// 添加一个关键词（按 `f_search` 中的空格分隔参与检索）。
+    #[must_use]
+    pub fn add_keyword(mut self, keyword: Keyword) -> Self {
+        self._keywords.push(keyword);
+        self
+    }
+
+    /// 批量添加关键词。
+    #[must_use]
+    pub fn add_keywords(mut self, keywords: Vec<Keyword>) -> Self {
+        self._keywords.extend(keywords);
+        self
+    }
+
+    /// 获取当前分类排除掩码（即写入 `f_cats` 的原值；0 = 不排除）。
+    #[must_use]
     pub fn category(&self) -> u16 {
         self._category
     }
 
-    /// 获取基础URL
-    fn build_base_url(&self) -> Result<Url, String> {
-        let mut url = Url::from(self._site);
+    /// 基础 URL：站点根，或订阅模式下的 `/watched` 路径。
+    fn build_base_url(&self) -> Result<Url, crate::error::Error> {
+        let mut url = Site::url(self._site)?;
         if self._watched {
             url.set_path("/watched");
         }
         Ok(url)
     }
 
-    /// 向URL中追加分类信息
-    fn build_append_category(&self, mut url: Url) -> Result<Url, String> {
+    /// 追加分类排除掩码 `f_cats`（0 = 不发送，代表全部显示）。
+    fn build_append_category(&self, mut url: Url) -> Url {
         if self._category != 0 {
             let mut query_pairs = url.query_pairs_mut();
             query_pairs.append_pair("f_cats", &self._category.to_string());
         }
-        Ok(url)
+        url
     }
 
-    /// 在给定的URL后面追加偏移量
-    fn build_append_offset(&self, mut url: Url) -> Result<Url, String> {
-        // 如果_offset存在
+    /// 追加偏移量参数（`prev`/`next`/`range`，及可选的 `jump`）。
+    fn build_append_offset(&self, mut url: Url) -> Url {
         if let Some(offset) = self._offset.clone() {
             let mut query_pairs = url.query_pairs_mut();
             query_pairs.extend_pairs(offset);
         }
-        Ok(url)
+        url
     }
 
-    /// 向URL中追加关键词
-    fn build_append_keywors(&self, mut url: Url) -> Result<Url, String> {
-        // 创建一个空的关键词列表
-        let mut keyword_list: Vec<String> = vec![];
-        // 遍历关键词列表
-        for keyword in &self._keywords {
-            // 将关键词字符串添加到关键词列表中
-            keyword_list.push(keyword.to_string());
-        }
-        // 将关键词列表追加到URL的查询参数中
-        {
+    /// 追加关键词参数 `f_search`（多个关键词以空格连接后整体 URL 编码）。
+    fn build_append_keywords(&self, mut url: Url) -> Url {
+        if !self._keywords.is_empty() {
+            let keyword_list: Vec<String> = self
+                ._keywords
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let mut query_pairs = url.query_pairs_mut();
             query_pairs.append_pair("f_search", keyword_list.join(" ").as_str());
         }
-        // 返回更新后的URL
-        Ok(url)
+        url
     }
 
-    fn build_append_advanced_search(&self, mut url: Url) -> Result<Url, String> {
-        // 如果高级搜索功能已启用
-        if self._advsearch.enabled {
-            // 获取可修改的查询参数
+    /// 追加高级搜索参数；未启用高级搜索时此函数为空操作。
+    fn build_append_advanced_search(&self, mut url: Url) -> Url {
+        if !self._advsearch.enabled {
+            return url;
+        }
+        {
             let mut query_pairs = url.query_pairs_mut();
-            // 添加"advsearch=1"查询参数
             query_pairs.append_pair("advsearch", "1");
-            // 如果已删除搜索结果，则添加"f_sh=on"查询参数
             if self._advsearch.expunged {
                 query_pairs.append_pair("f_sh", "on");
             }
-            // 如果要求只显示种子文件，则添加"f_sto=on"查询参数
             if self._advsearch.require_torrent {
                 query_pairs.append_pair("f_sto", "on");
             }
-            // 根据分页范围添加相应的查询参数
-            match self._advsearch.between_pages {
-                // 分页范围为指定起始页码和结束页码
-                PageRange(Some(spf), Some(spt)) => {
-                    query_pairs.append_pair("f_spf", &spf.to_string());
-                    query_pairs.append_pair("f_spt", &spt.to_string());
-                }
-                // 分页范围为指定起始页码，无结束页码
-                PageRange(Some(spf), None) => {
+            // 页数范围必须带 f_sp=on，否则站点忽略 f_spf/f_spt
+            let range = &self._advsearch.between_pages;
+            if range.start.is_some() || range.end.is_some() {
+                query_pairs.append_pair("f_sp", "on");
+                if let Some(spf) = range.start {
                     query_pairs.append_pair("f_spf", &spf.to_string());
                 }
-                // 分页范围为无起始页码，指定结束页码
-                PageRange(None, Some(spt)) => {
+                if let Some(spt) = range.end {
                     query_pairs.append_pair("f_spt", &spt.to_string());
                 }
-                // 分页范围为无起始页码和结束页码
-                PageRange(None, None) => {}
             }
-            // 如果搜索结果的评分要求大于0，则添加"f_srdd"查询参数
+            // 最低评分必须带 f_sr=on，否则站点忽略 f_srdd
             if self._advsearch.rating > 0 {
+                query_pairs.append_pair("f_sr", "on");
                 query_pairs.append_pair("f_srdd", &self._advsearch.rating.to_string());
             }
-            // 如果已禁用语言过滤器，则添加"f_sfl=on"查询参数
             if self._advsearch.disable_filters_for_language {
                 query_pairs.append_pair("f_sfl", "on");
             }
-            // 如果已禁用上传者过滤器，则添加"f_sfu=on"查询参数
             if self._advsearch.disable_filters_for_uploader {
                 query_pairs.append_pair("f_sfu", "on");
             }
-            // 如果已禁用标签过滤器，则添加"f_sft=on"查询参数
             if self._advsearch.disable_filters_for_tags {
                 query_pairs.append_pair("f_sft", "on");
             }
         }
-        Ok(url)
+        url
     }
 
-    pub fn build(self) -> Result<Url, String> {
-        let mut url = self.build_base_url()?;
-        url = self.build_append_offset(url)?;
-        url = self.build_append_category(url)?;
-        url = self.build_append_keywors(url)?;
-        url = self.build_append_advanced_search(url)?;
-        Ok(url)
+    /// 构建最终 URL。
+    ///
+    /// # Errors
+    ///
+    /// 仅当站点无法转为 URL（[`Site::Un`]）时返回 [`Error::Config`](crate::error::Error::Config)；
+    /// 其余参数不参与 URL 解析，不会失败。
+    pub fn build(self) -> Result<Url, crate::error::Error> {
+        let url = self.build_base_url()?;
+        let url = self.build_append_offset(url);
+        let url = self.build_append_category(url);
+        let url = self.build_append_keywords(url);
+        Ok(self.build_append_advanced_search(url))
     }
 }
 
 impl Default for SearchBuilder {
+    /// 等价于 [`SearchBuilder::new(Site::Eh)`](SearchBuilder::new)。
     fn default() -> Self {
         SearchBuilder::new(Site::Eh)
     }
@@ -297,21 +419,85 @@ impl Default for SearchBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::dto::{
-        gallery::category::Category, keyword::Keyword, search_offset::Offset, site::Site,
-    };
-    use crate::url::search::SearchBuilder;
+    use super::*;
+    use crate::dto::site::Site;
 
     #[test]
-    fn test_search_builder() {
-        let builder = SearchBuilder::new(Site::Eh);
-        let builder = builder
-            .offset(Offset::Prev(1, Some("1y".to_string())))
-            .mask_all_categories()
-            .toggle_category(Category::Doujinshi)
+    fn default_build_is_site_root() {
+        let url = SearchBuilder::new(Site::Eh).build().unwrap();
+        assert_eq!(url.as_str(), "https://e-hentai.org/");
+        assert!(url.query().is_none());
+    }
+
+    #[test]
+    fn rating_requires_f_sr_on() {
+        let url = SearchBuilder::new(Site::Eh)
             .enable_advanced_search()
-            .add_keyword(Keyword::Female("living clothes".to_string()));
-        let url = builder.build().unwrap();
-        println!("url: {}", url.to_string());
+            .rating(4)
+            .build()
+            .unwrap();
+        let q = url.query().unwrap();
+        assert!(q.contains("f_sr=on"));
+        assert!(q.contains("f_srdd=4"));
+    }
+
+    #[test]
+    fn rating_out_of_range_ignored() {
+        let url = SearchBuilder::new(Site::Eh)
+            .enable_advanced_search()
+            .rating(1)
+            .build()
+            .unwrap();
+        // 1 不是合法的 f_srdd 值，应保持未设置
+        assert!(!url.query().unwrap_or_default().contains("f_srdd"));
+    }
+
+    #[test]
+    fn page_range_requires_f_sp_on() {
+        let url = SearchBuilder::new(Site::Eh)
+            .enable_advanced_search()
+            .between_pages(PageRange::new(Some(1), Some(10)))
+            .build()
+            .unwrap();
+        let q = url.query().unwrap();
+        assert!(q.contains("f_sp=on"));
+        assert!(q.contains("f_spf=1"));
+        assert!(q.contains("f_spt=10"));
+    }
+
+    #[test]
+    fn category_mask_semantics() {
+        // 排除 Doujinshi → f_cats=2
+        let url = SearchBuilder::new(Site::Eh)
+            .disable_category(Category::Doujinshi)
+            .build()
+            .unwrap();
+        assert_eq!(url.query().unwrap(), "f_cats=2");
+
+        // 先排除全部再放开 Doujinshi → f_cats=1021（只显示 Doujinshi）
+        let url = SearchBuilder::new(Site::Eh)
+            .disable_all_categories()
+            .enable_category(Category::Doujinshi)
+            .build()
+            .unwrap();
+        assert_eq!(url.query().unwrap(), "f_cats=1021");
+
+        // 无效掩码位不写入 URL
+        let url = SearchBuilder::new(Site::Eh)
+            .disable_category(Category::Unknown)
+            .build()
+            .unwrap();
+        assert!(url.query().is_none());
+    }
+
+    #[test]
+    fn watched_path_and_offset() {
+        let url = SearchBuilder::new(Site::Eh)
+            .watched()
+            .offset(Offset::Next(1234, None))
+            .build()
+            .unwrap();
+        assert_eq!(url.path(), "/watched");
+        assert!(url.query().unwrap().contains("next=1234"));
     }
 }
