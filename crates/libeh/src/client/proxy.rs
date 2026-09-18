@@ -28,8 +28,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 
-/// 代理连接支持的协议。
-const SUPPORTED_PROTOCOLS: [&str; 3] = ["http", "https", "socks5"];
+/// 代理连接支持的协议（`socks5` 依赖 reqwest 的 `socks` feature）。
+///
+/// 唯一来源：`EhClientProxy::validate` 与客户端构建均引用此常量。
+pub const SUPPORTED_PROTOCOLS: [&str; 3] = ["http", "https", "socks5"];
 
 /// 代理设置（协议 + 主机 + 端口）。
 ///
@@ -99,6 +101,23 @@ impl EhClientProxy {
     #[must_use]
     fn to_proxy_url(&self) -> String {
         format!("{}://{}:{}", self.protocol, self.host, self.port)
+    }
+
+    /// 校验协议是否受支持。
+    ///
+    /// # Errors
+    ///
+    /// 协议不在 [`SUPPORTED_PROTOCOLS`] 内时返回 [`Error::Config`]。
+    /// （reqwest 构建期不校验协议，非法值只能在请求期失败，这里先行拦截。）
+    pub fn validate(&self) -> Result<(), Error> {
+        if SUPPORTED_PROTOCOLS.contains(&self.protocol.as_str()) {
+            Ok(())
+        } else {
+            Err(Error::Config(format!(
+                "unsupported proxy protocol {:?}; expected one of {SUPPORTED_PROTOCOLS:?}",
+                self.protocol
+            )))
+        }
     }
 }
 

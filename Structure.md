@@ -42,6 +42,8 @@ This library encapsulates functions that request API and page content from EH to
 
 ### Extra / 站点能力（0.2.0 新增）
 
+- [x] 图片批量下载器（`client::downloader`：并发 + Range 断点续传 + 进度回调）
+
 - [x] 种子列表解析（`dto::torrent`，自动剥离 `?p=` 私钥）
 - [x] 账密登录（`EhClient::login`，双域 Cookie 补写）
 - [x] 收藏夹读取 / 添加 / 批量移动删除

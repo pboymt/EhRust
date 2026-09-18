@@ -14,6 +14,7 @@ EhRust is a simple, easy-to-use, and speedy Rust library for the **E-Hentai** an
 - Cookie authentication (dual-domain + `nw=1`), HTTP/SOCKS5 proxy, typed errors.
 - Image-page parsing (image URL / showkey / source-fallback / original) + `showpage` API.
 - Torrent list parsing, password sign-in, favorites read/add/modify, search pager.
+- Batch image downloader: concurrency, HTTP range resume, progress callbacks.
 
 ## Quick start
 

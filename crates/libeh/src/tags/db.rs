@@ -52,8 +52,37 @@ pub struct EttHeadMember {
     pub name: String,
     /// 邮箱。
     pub email: String,
-    /// 时间（RFC 3339 字符串，如 `2024-01-23T05:23:05.000Z`）。
+    /// 时间（上游历史版本为 RFC 3339 字符串，如 `2024-01-23T05:23:05.000Z`；
+    /// 某些导出为毫秒时间戳数字，本字段两种格式都能反序列化）。
+    #[serde(with = "flexible_timestamp")]
     pub when: String,
+}
+
+/// 兼容字符串（RFC 3339）与数字（毫秒时间戳）两种时间格式的反序列化。
+mod flexible_timestamp {
+    use serde::{Deserialize, Deserializer};
+
+    /// 序列化为 RFC 3339 风格的字符串（透传原值）。
+    pub fn serialize<S: serde::Serializer>(when: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(when)
+    }
+
+    /// 反序列化：字符串透传；数字按毫秒时间戳转为 ISO 字符串。
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        match value {
+            serde_json::Value::String(s) => Ok(s),
+            serde_json::Value::Number(n) => {
+                let ms = n.as_i64().unwrap_or_default();
+                chrono::DateTime::from_timestamp_millis(ms)
+                    .map(|dt| dt.to_rfc3339())
+                    .ok_or_else(|| serde::de::Error::custom(format!("timestamp {ms} out of range")))
+            }
+            other => Err(serde::de::Error::custom(format!(
+                "invalid `when` field: expected string or number, got {other}"
+            ))),
+        }
+    }
 }
 
 /// 一个命名空间的翻译集合。

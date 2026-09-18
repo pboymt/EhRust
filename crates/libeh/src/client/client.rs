@@ -68,8 +68,6 @@ const UNAVAILABLE_MARK: &str = "This gallery is unavailable";
 const CONTENT_WARNING_COOKIE: (&str, &str) = ("nw", "1");
 /// 认证 Cookie 需要同时写入的两个站点域（与 EhViewer 行为一致）。
 const AUTH_DOMAINS: [&str; 2] = ["e-hentai.org", "exhentai.org"];
-/// 客户端支持的代理协议（`socks5` 依赖 reqwest 的 `socks` feature）。
-const SUPPORTED_PROXY_PROTOCOLS: [&str; 3] = ["http", "https", "socks5"];
 /// 页面请求（列表/详情/图片页）的超时。
 const TIMEOUT_PAGE: Duration = Duration::from_secs(30);
 /// api.php JSON 请求的超时。
@@ -115,14 +113,9 @@ impl EhClient {
             );
 
         if let Some(proxy) = &config.proxy {
+            // 协议校验收敛在 EhClientProxy::validate（reqwest 构建期不校验）
+            proxy.validate()?;
             let proxy_url = proxy.to_string();
-            // reqwest 构建期不校验协议，这里先行校验以给出明确错误
-            if !SUPPORTED_PROXY_PROTOCOLS.contains(&proxy.protocol.as_str()) {
-                return Err(Error::Config(format!(
-                    "unsupported proxy protocol {:?}; expected one of {SUPPORTED_PROXY_PROTOCOLS:?}",
-                    proxy.protocol
-                )));
-            }
             let proxy = Proxy::all(&proxy_url)
                 .map_err(|e| Error::Config(format!("invalid proxy {proxy_url:?}: {e}")))?;
             builder = builder.proxy(proxy);
@@ -318,6 +311,12 @@ impl EhClient {
             .map_err(|e| Error::parse("json response", e.to_string(), String::new()))
     }
 
+    /// 构建一个未发送的原始 GET 请求（供下载器等需要自定义
+    /// 超时/头部/流式读取的场景使用）。
+    pub fn raw_get(&self, url: Url) -> reqwest::RequestBuilder {
+        self.client.get(url)
+    }
+
     /// 当前站点对应的 api.php 地址。
     #[must_use]
     pub fn api_url(&self) -> Url {
@@ -395,13 +394,34 @@ impl EhClient {
     ///
     /// # Errors
     ///
-    /// 网络/状态码失败 → 相应 [`Error`]；响应缺少 `tokenlist` → [`Error::Parse`]。
+    /// 网络/状态码失败 → 相应 [`Error`]；站点拒绝（顶层 `error` 字段）
+    /// → [`Error::Protocol`]；响应缺少 `tokenlist` → [`Error::Parse`]。
     pub async fn gallery_tokens(
         &self,
         items: Vec<PageListItem>,
     ) -> Result<Vec<TokenListItem>, Error> {
         let body = GalleryTokensRequest::new(items);
-        let response: GalleryTokenResponse = self.post_json(self.api_url(), &body).await?;
+        let raw = self
+            .client
+            .post(self.api_url())
+            .timeout(TIMEOUT_API)
+            .json(&body)
+            .send()
+            .await
+            .map_err(Error::Http)?;
+        let status = raw.status();
+        if !status.is_success() {
+            return Err(Error::status(status.as_u16(), self.api_url().to_string()));
+        }
+        let text = raw.text().await.map_err(Error::Http)?;
+        // 与 gdata 相同：站点对无效 pagelist 返回顶层 {"error": …}
+        let value: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| Error::parse("gtoken response", e.to_string(), snippet(&text, 512)))?;
+        if let Some(err) = value.get("error").and_then(serde_json::Value::as_str) {
+            return Err(Error::Protocol(err.to_string()));
+        }
+        let response: GalleryTokenResponse = serde_json::from_value(value)
+            .map_err(|e| Error::parse("gtoken response", e.to_string(), snippet(&text, 512)))?;
         Ok(response.tokenlist)
     }
 }

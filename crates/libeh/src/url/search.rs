@@ -307,16 +307,22 @@ impl SearchBuilder {
     }
 
     /// 添加一个关键词（按 `f_search` 中的空格分隔参与检索）。
+    ///
+    /// 值为空白的关键词被忽略——空词会生成无效的 `f_search` 片段。
     #[must_use]
     pub fn add_keyword(mut self, keyword: Keyword) -> Self {
-        self._keywords.push(keyword);
+        if !keyword.is_blank() {
+            self._keywords.push(keyword);
+        }
         self
     }
 
-    /// 批量添加关键词。
+    /// 批量添加关键词（空白值被忽略，见 [`SearchBuilder::add_keyword`]）。
     #[must_use]
     pub fn add_keywords(mut self, keywords: Vec<Keyword>) -> Self {
-        self._keywords.extend(keywords);
+        for keyword in keywords {
+            self = self.add_keyword(keyword);
+        }
         self
     }
 
@@ -513,6 +519,21 @@ mod tests {
             .build()
             .unwrap();
         assert!(url.query().is_none());
+    }
+
+    #[test]
+    fn blank_keywords_are_filtered() {
+        use crate::dto::keyword::Keyword;
+        let url = SearchBuilder::new(Site::Eh)
+            .add_keyword(Keyword::Normal("  ".into()))
+            .add_keyword(Keyword::Normal("real".into()))
+            .add_keyword(Keyword::Artist("   ".into()))
+            .build()
+            .unwrap();
+        let q = url.query().unwrap();
+        // 只剩一个有效关键词，无空 token
+        assert!(q.contains("f_search=real"), "{q}");
+        assert!(!q.contains("f_search=real%20"), "{q}");
     }
 
     #[test]

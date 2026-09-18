@@ -102,6 +102,30 @@
 - **分级超时**（复审 N1）：连接 10s（客户端级）+ 页面 30s / api.php 15s
   （按请求设置），为后续大文件下载预留更长超时的空间。
 
+
+### 新增（0.2.0 第二批：图片批量下载器 + 复审清尾）
+
+- **图片批量下载器** `client::downloader::Downloader`：
+  详情页 → 遍历预览分页收集全部图片页链接 → 并发抓图片页 →
+  并发下载落盘 `dest/{gid}/{page:04}.{ext}`；
+  `.part` 临时文件 + `Range` 断点续传（206 追加 / 200 重写）；
+  并发数 / 覆盖 / 单图超时可配（默认并发 3、300s，站点敏感）；
+  `ProgressEvent` 回调实时上报（Planned/Finished/Skipped/Failed）；
+  单页失败不中断整体，汇总进 `DownloadSummary::failed`。
+- **分级超时补全**：图片下载单图 300s（复审 N1 预留的下载档位）。
+- **`EhClient::raw_get`**：暴露原始 GET 构建器供流式下载场景。
+
+### 修复（复审遗留清尾）
+
+- **N2** `EhClient::gallery_tokens`：补检查 api.php 顶层 `error` 字段
+  （此前无效 pagelist 会报 serde 错误而非站点原文）。
+- **N4** 代理协议白名单收敛到 `EhClientProxy::validate` + 公开常量
+  `SUPPORTED_PROTOCOLS`（消除 client.rs 的重复定义）。
+- **N6** `SearchBuilder::add_keyword(s)` 过滤空白关键词
+  （`Keyword::is_blank()`），空值不再生成无效 `f_search` 片段。
+- **N7** `EttHeadMember.when` 反序列化兼容字符串（RFC 3339）与
+  数字（毫秒时间戳）两种上游格式。
+
 ### 破坏性变更
 
 - 所有 fallible API 的错误类型由 `String` 变为 `libeh::error::Error`；

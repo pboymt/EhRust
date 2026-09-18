@@ -121,6 +121,30 @@ fn sanitize(value: &str) -> String {
 }
 
 impl Keyword {
+    /// 判断关键词值是否为空白（构造查询时应跳过）。
+    ///
+    /// `Keyword::Normal("")` 这类空值会生成空的 `f_search` 片段，
+    /// [`crate::url::search::SearchBuilder`] 据此过滤。
+    #[must_use]
+    pub fn is_blank(&self) -> bool {
+        match self {
+            Keyword::Normal(v) => v.trim().is_empty(),
+            Keyword::Language(v)
+            | Keyword::Parody(v)
+            | Keyword::Character(v)
+            | Keyword::Artist(v)
+            | Keyword::Cosplayer(v)
+            | Keyword::Group(v)
+            | Keyword::Female(v)
+            | Keyword::Male(v)
+            | Keyword::Mixed(v)
+            | Keyword::Other(v)
+            | Keyword::Reclass(v)
+            | Keyword::Temp(v)
+            | Keyword::Uploader(v) => v.trim().is_empty(),
+        }
+    }
+
     /// 返回该关键词对应的站点命名空间前缀（如 `"female"`）；
     /// [`Keyword::Normal`] 没有命名空间，返回 `None`。
     #[must_use]
